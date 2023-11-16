@@ -31,31 +31,49 @@ class CSIDataset(Dataset):
         label = torch.tensor(self.labels[idx]).long().to(self.device)
         return {'input': data, 'label': label}
 
-def getAcc(loader, model):
+def getAcc(loader, model, noiseAmpRatio = 0.0, noiseType = 'random'):
     '''
     get accuracy from predictions
     '''
-    pred_l,label_l = getPreds(loader, model)
-
+    pred_l,label_l = getPreds(loader, model, noiseAmpRatio=noiseAmpRatio, noiseType=noiseType)
     correct = 0.
     for pred, label in zip(pred_l,label_l):
         correct += (pred==label)
 
     return correct/len(pred_l)
 
-def getPreds(loader,model,print_time = False):
-    '''
-    get predictions from network
-    '''
 
+def getPreds(loader, model, noiseAmpRatio = 0.0, noiseType = 'random', print_time = False):
+    # get predictions from network
+    device = model.device
     model.eval()
     pred_l   = []
     label_l = [] 
+    
+    if noiseType == 'FGM':
+        model.train()
 
     start = time.time()
     for batch in loader:
+        inputFlatten = batch['input'].view(batch['input'].shape[0], -1)
+        noiseAmp = LA.norm(inputFlatten, dim=1) * noiseAmpRatio
+        if noiseType == 'random':
+            noise = torch.randn(inputFlatten.shape, device=device)
+        elif noiseType == 'FGM':
+            batch['input'].requires_grad = True
+            model.zero_grad()
+            loss = nn.CrossEntropyLoss()
+            loss = loss(model(batch['input']), batch['label'])
+            loss.backward()
+            noise = (batch['input'].grad.data).view(batch['input'].shape[0], -1)
+        noise = torch.mul(torch.div(noise, LA.norm(noise, dim=1).unsqueeze(1)),\
+                            noiseAmp.unsqueeze(1))
+        # print(LA.norm(noise, dim=1).mean())
+        noiseInputFlatten = inputFlatten + noise
+        batch['input'] = noiseInputFlatten.view(batch['input'].shape)
+
         outputs = model(batch['input'])
-        # print('outputs:',outputs.shape)
+
         pred_l.extend(outputs.detach().max(dim=1).indices.cpu().tolist())
         label_l.extend(batch['label'].cpu().tolist())
         

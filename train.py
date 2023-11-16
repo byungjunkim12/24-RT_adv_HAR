@@ -102,7 +102,7 @@ def main():
     maxPatience = 40
     nEpoch = 500
     HARNetSavePath = './savedModels/LSTM_H_' + str(nHidden) + '_th_' + str(thres) + '_B_'\
-        + str(batchSize) + '_C_' + str(len(activities)) + '_balanced.cpkt'
+        + str(batchSize) + '_C_' + str(len(activities)) + '.cpkt'
 
     HARNet = LSTMNet(nClasses=len(activities), input_size=nSubC*nRX,\
         hidden_size=nHidden, num_layers=1, seq_length=winLen//2, device=device)
