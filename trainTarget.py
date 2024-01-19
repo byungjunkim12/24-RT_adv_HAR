@@ -42,9 +42,11 @@ def main():
     dataPath = inputJson["dataPathBase"]
     dataType = inputJson["dataType"]
     nHidden = inputJson["nHidden"]
+    nLayer = inputJson["nLayer"]
     thres = inputJson["threshold"]
     batchSize = inputJson["batchSize"]
     LR = inputJson["learningRate"]
+    bidirectional = inputJson["bidirectional"]
     fromInit = inputJson["fromInit"]
     
     inputJsonFile.close()
@@ -61,7 +63,7 @@ def main():
         activities = ['fall', 'pickup', 'run', 'sitdown', 'standup', 'walk']
 
     print('json:', inputJsonFileName, 'device:', device)
-    print('nHidden:', nHidden, 'thres:', thres, 'batchSize:', batchSize, 'LR:', LR, 'fromInit:', fromInit, '# of classes:', len(activities))
+    print('nHidden:', nHidden, 'bidirectional:', bidirectional, 'thres:', thres, 'batchSize:', batchSize, 'LR:', LR, 'fromInit:', fromInit, '# of classes:', len(activities))
     
     # load windowed data from csv file
     dataDict = {file:[] for file in activities}
@@ -101,11 +103,15 @@ def main():
     LSTMLoss = torch.nn.CrossEntropyLoss()
     maxPatience = 40
     nEpoch = 500
-    HARNetSavePath = './savedModels/LSTM_H_' + str(nHidden) + '_th_' + str(thres) + '_B_'\
-        + str(batchSize) + '_C_' + str(len(activities)) + '.cpkt'
+    if bidirectional:
+        modelName = "BLSTM"
+    else:
+        modelName = "LSTM"
 
-    HARNet = LSTMNet(nClasses=len(activities), input_size=nSubC*nRX,\
-        hidden_size=nHidden, num_layers=1, seq_length=winLen//2, device=device)
+    HARNetSavePath = './savedModels/' + modelName + '_H_' + str(nHidden) + '_th_' + str(thres) + \
+       '_L_' + str(nLayer) + '.cpkt'
+    HARNet = LSTMNet(nClasses=len(activities), bidirectional=bidirectional, input_size=nSubC*nRX,\
+        hidden_size=nHidden, num_layers=nLayer, seq_length=winLen//2, device=device)
     HARNet.to(device)
     if fromInit:
         HARNet.apply(init_weights)
