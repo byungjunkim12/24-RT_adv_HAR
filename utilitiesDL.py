@@ -51,7 +51,7 @@ class LSTMNet(nn.Module):
         #     hi = hi.reshape(hi.shape[0], -1) #reshaping the data for Dense layer next
         #     out = self.relu(hi)
         # else:
-        #     hn = hn.view(-1, self.hidden_size) #reshaping the data for Dense layer next
+        #     hn = hn.view(-1, self.hidden_size) #reshapinxg the data for Dense layer next
         #     out = self.relu(hn)
 
         out = self.fc(out) #Final Output
