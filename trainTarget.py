@@ -37,7 +37,7 @@ def main():
     else:
         device = torch.device("cpu")
     
-    inputJsonFile = open("./inputJson/" + inputJsonFileName + ".json", "r")
+    inputJsonFile = open("./inputJson/LSTMJson/" + inputJsonFileName + ".json", "r")
     inputJson = json.load(inputJsonFile)
     dataPath = inputJson["dataPathBase"]
     dataType = inputJson["dataType"]

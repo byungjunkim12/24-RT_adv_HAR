@@ -3,8 +3,8 @@ import torch
 
 from torch.nn import Module
 
-from models.nets import PolicyNetwork, ValueNetwork, Discriminator
-from utils.funcs import get_flat_grads, get_flat_params, set_params, \
+from GAIL.models.nets import PolicyNetwork, ValueNetwork, Discriminator
+from GAIL.utils.funcs import get_flat_grads, get_flat_params, set_params, \
     conjugate_gradient, rescale_and_linesearch
 
 if torch.cuda.is_available():
@@ -47,7 +47,7 @@ class GAIL(Module):
 
         return action
 
-    def train(self, env, expert, render=False):
+    def train(self, trDataDict, tsDataDict, render=False):
         num_iters = self.train_config["num_iters"]
         num_steps_per_iter = self.train_config["num_steps_per_iter"]
         horizon = self.train_config["horizon"]
@@ -61,7 +61,7 @@ class GAIL(Module):
 
         opt_d = torch.optim.Adam(self.d.parameters())
 
-        exp_rwd_iter = []
+        # exp_rwd_iter = []
 
         exp_obs = []
         exp_acts = []
@@ -69,12 +69,12 @@ class GAIL(Module):
         steps = 0
         while steps < num_steps_per_iter:
             ep_obs = []
-            ep_rwds = []
+            # ep_rwds = []
 
             t = 0
             done = False
 
-            ob = env.reset()
+            # ob = env.reset()
 
             while not done and steps < num_steps_per_iter:
                 act = expert.act(ob)
@@ -85,9 +85,10 @@ class GAIL(Module):
 
                 if render:
                     env.render()
-                ob, rwd, done, info = env.step(act)
+                # ob, rwd, done, info = env.step(act)
+                
 
-                ep_rwds.append(rwd)
+                # ep_rwds.append(rwd)
 
                 t += 1
                 steps += 1
@@ -97,23 +98,23 @@ class GAIL(Module):
                         done = True
                         break
 
-            if done:
-                exp_rwd_iter.append(np.sum(ep_rwds))
+            # if done:
+            #     exp_rwd_iter.append(np.sum(ep_rwds))
 
             ep_obs = FloatTensor(np.array(ep_obs))
-            ep_rwds = FloatTensor(ep_rwds)
+            # ep_rwds = FloatTensor(ep_rwds)
 
-        exp_rwd_mean = np.mean(exp_rwd_iter)
-        print(
-            "Expert Reward Mean: {}".format(exp_rwd_mean)
-        )
+        # exp_rwd_mean = np.mean(exp_rwd_iter)
+        # print(
+        #     "Expert Reward Mean: {}".format(exp_rwd_mean)
+        # )
 
         exp_obs = FloatTensor(np.array(exp_obs))
         exp_acts = FloatTensor(np.array(exp_acts))
 
-        rwd_iter_means = []
+        # rwd_iter_means = []
         for i in range(num_iters):
-            rwd_iter = []
+            # rwd_iter = []
 
             obs = []
             acts = []
@@ -125,7 +126,7 @@ class GAIL(Module):
             while steps < num_steps_per_iter:
                 ep_obs = []
                 ep_acts = []
-                ep_rwds = []
+                # ep_rwds = []
                 ep_costs = []
                 ep_disc_costs = []
                 ep_gms = []
@@ -147,9 +148,10 @@ class GAIL(Module):
 
                     if render:
                         env.render()
-                    ob, rwd, done, info = env.step(act)
+                    # ob, rwd, done, info = env.step(act)
+                    
 
-                    ep_rwds.append(rwd)
+                    # ep_rwds.append(rwd)
                     ep_gms.append(gae_gamma ** t)
                     ep_lmbs.append(gae_lambda ** t)
 
@@ -161,12 +163,12 @@ class GAIL(Module):
                             done = True
                             break
 
-                if done:
-                    rwd_iter.append(np.sum(ep_rwds))
+                # if done:
+                #     rwd_iter.append(np.sum(ep_rwds))
 
                 ep_obs = FloatTensor(np.array(ep_obs))
                 ep_acts = FloatTensor(np.array(ep_acts))
-                ep_rwds = FloatTensor(ep_rwds)
+                # ep_rwds = FloatTensor(ep_rwds)
                 # ep_disc_rwds = FloatTensor(ep_disc_rwds)
                 ep_gms = FloatTensor(ep_gms)
                 ep_lmbs = FloatTensor(ep_lmbs)
@@ -200,11 +202,16 @@ class GAIL(Module):
 
                 gms.append(ep_gms)
 
-            rwd_iter_means.append(np.mean(rwd_iter))
+            # rwd_iter_means.append(np.mean(rwd_iter))
+            # print(
+            #     "Iterations: {},   Reward Mean: {}"
+            #     .format(i + 1, np.mean(rwd_iter))
+            # )
             print(
-                "Iterations: {},   Reward Mean: {}"
-                .format(i + 1, np.mean(rwd_iter))
+                "Iterations: {}"
+                .format(i + 1)
             )
+
 
             obs = FloatTensor(np.array(obs))
             acts = FloatTensor(np.array(acts))
@@ -321,4 +328,4 @@ class GAIL(Module):
 
             set_params(self.pi, new_params)
 
-        return exp_rwd_mean, rwd_iter_means
+        # return exp_rwd_mean, rwd_iter_means
