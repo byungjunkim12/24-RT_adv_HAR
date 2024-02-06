@@ -151,19 +151,3 @@ def getPredsGAIL(inputBatch, noiseBatch, labelBatch, model, noiseAmpRatio = 0.0,
         print('time per example:', (end-start)/len(label_l))
 
     return pred_l, label_l
-
-
-    # for batch in loader:
-    #     inputFlatten = batch['obs'].view(batch['obs'].shape[0], -1)
-    #     noiseAmp = LA.norm(inputFlatten, dim=1) * noiseAmpRatio
-    #     noiseFlatten = batch['FGM'].view(batch['FGM'].shape[0], -1)
-    #     noiseNormalized = torch.mul(torch.div(noiseFlatten, LA.norm(noiseFlatten, dim=1).unsqueeze(1)),\
-    #             noiseAmp.unsqueeze(1))
-    #     noise = noiseNormalized.view(batch['obs'].shape)
-
-    #     batchInput = batch['obs'] + noise
-
-    #     outputs = model(batchInput)
-
-    #     pred_l.extend(outputs.detach().max(dim=1).indices.cpu().tolist())
-    #     label_l.extend(batch['label'].cpu().tolist())
