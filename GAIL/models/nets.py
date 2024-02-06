@@ -11,9 +11,10 @@ else:
 
 
 class PolicyNetwork(Module):
-    def __init__(self, state_dim, action_dim, discrete) -> None:
+    def __init__(self, state_dim, action_dim, discrete, device) -> None:
         super().__init__()
 
+        self.device = device
         self.net = Sequential(
             Linear(state_dim, 50),
             Tanh(),
@@ -22,24 +23,24 @@ class PolicyNetwork(Module):
             Linear(50, 50),
             Tanh(),
             Linear(50, action_dim),
-        )
+        ).to(self.device)
 
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.discrete = discrete
 
         if not self.discrete:
-            self.log_std = Parameter(torch.zeros(action_dim))
+            self.log_std = Parameter(torch.zeros(action_dim).to(self.device))
 
     def forward(self, states):
         if self.discrete:
-            probs = torch.softmax(self.net(states), dim=-1)
-            distb = Categorical(probs)
+            probs = torch.softmax(self.net(states), dim=-1).to(self.device)
+            distb = Categorical(probs).to(self.device)
         else:
             mean = self.net(states)
 
-            std = torch.exp(self.log_std)
-            cov_mtx = torch.eye(self.action_dim) * (std ** 2)
+            std = torch.exp(self.log_std).to(self.device)
+            cov_mtx = torch.eye(self.action_dim).to(self.device) * (std ** 2)
 
             distb = MultivariateNormal(mean, cov_mtx)
 
@@ -47,9 +48,10 @@ class PolicyNetwork(Module):
 
 
 class ValueNetwork(Module):
-    def __init__(self, state_dim) -> None:
+    def __init__(self, state_dim, device) -> None:
         super().__init__()
-
+        
+        self.device = device
         self.net = Sequential(
             Linear(state_dim, 50),
             Tanh(),
@@ -58,19 +60,20 @@ class ValueNetwork(Module):
             Linear(50, 50),
             Tanh(),
             Linear(50, 1),
-        )
+        ).to(device)
 
     def forward(self, states):
         return self.net(states)
 
 
 class Discriminator(Module):
-    def __init__(self, state_dim, action_dim, discrete) -> None:
+    def __init__(self, state_dim, action_dim, discrete, device) -> None:
         super().__init__()
 
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.discrete = discrete
+        self.device = device
 
         if self.discrete:
             self.act_emb = Embedding(
@@ -88,7 +91,7 @@ class Discriminator(Module):
             Linear(50, 50),
             Tanh(),
             Linear(50, 1),
-        )
+        ).to(self.device)
 
     def forward(self, states, actions):
         return torch.sigmoid(self.get_logits(states, actions))
