@@ -16,13 +16,13 @@ class PolicyNetwork(Module):
 
         self.device = device
         self.net = Sequential(
-            Linear(state_dim, 50),
+            Linear(state_dim, 50, device=self.device),
             Tanh(),
-            Linear(50, 50),
+            Linear(50, 50, device=self.device),
             Tanh(),
-            Linear(50, 50),
+            Linear(50, 50, device=self.device),
             Tanh(),
-            Linear(50, action_dim),
+            Linear(50, action_dim, device=self.device),
         ).to(self.device)
 
         self.state_dim = state_dim
@@ -30,7 +30,7 @@ class PolicyNetwork(Module):
         self.discrete = discrete
 
         if not self.discrete:
-            self.log_std = Parameter(torch.zeros(action_dim).to(self.device))
+            self.log_std = Parameter(torch.zeros(action_dim, device=self.device))
 
     def forward(self, states):
         if self.discrete:
@@ -53,13 +53,13 @@ class ValueNetwork(Module):
         
         self.device = device
         self.net = Sequential(
-            Linear(state_dim, 50),
+            Linear(state_dim, 50, device=self.device),
             Tanh(),
-            Linear(50, 50),
+            Linear(50, 50, device=self.device),
             Tanh(),
-            Linear(50, 50),
+            Linear(50, 50, device=self.device),
             Tanh(),
-            Linear(50, 1),
+            Linear(50, 1, device=self.device),
         ).to(device)
 
     def forward(self, states):
@@ -84,13 +84,13 @@ class Discriminator(Module):
             self.net_in_dim = state_dim + action_dim
 
         self.net = Sequential(
-            Linear(self.net_in_dim, 50),
+            Linear(self.net_in_dim, 50, device=self.device),
             Tanh(),
-            Linear(50, 50),
+            Linear(50, 50, device=self.device),
             Tanh(),
-            Linear(50, 50),
+            Linear(50, 50, device=self.device),
             Tanh(),
-            Linear(50, 1),
+            Linear(50, 1, device=self.device),
         ).to(self.device)
 
     def forward(self, states, actions):

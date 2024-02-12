@@ -161,7 +161,7 @@ def main():
         if bestAcc < accTest:
             bestAcc = accTest
             print('saving model')
-            torch.save(HARNet.state_dict(), HARNetSavePath)  # saving model with best test accuracy
+            # torch.save(HARNet.state_dict(), HARNetSavePath)  # saving model with best test accuracy
             patience = 0
 
         # early stopping if model converges twice

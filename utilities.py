@@ -12,10 +12,10 @@ def init_weights(m):
 
 class FGMDataset(Dataset):
     def __init__(self, dataDict, device, normalize=True):
-        self.obs = dataDict['obs'] # using IQ sample value
-        self.FGM = dataDict['FGM']
-        self.labels = dataDict['label']
         self.device = device
+        self.obs = dataDict['obs'].float() # using IQ sample value
+        self.FGM = dataDict['FGM'].float()
+        self.labels = dataDict['label'].long()
         self.normalize = normalize
 
     def __len__(self):
@@ -25,11 +25,17 @@ class FGMDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        obs = torch.tensor(self.obs[idx]).float().to(self.device)
+        obs = self.obs[idx].clone().detach().requires_grad_(True)
+        # torch.tensor(self.obs[idx], device=self.device)
         if self.normalize:
             obs = obs * torch.numel(obs)/ LA.norm(obs)
-        FGM = torch.tensor(self.FGM[idx]).float().to(self.device)
-        label = torch.tensor(self.labels[idx]).long().to(self.device)
+        FGM = self.FGM[idx].clone().detach().requires_grad_(True)
+        label = self.labels[idx].clone().detach()
+        # obs = self.obs[idx]
+        # if self.normalize:
+        #     obs = obs * torch.numel(obs)/ LA.norm(obs)
+        # FGM = self.FGM[idx]
+        # label = self.labels[idx]
 
         return {'obs': obs, 'FGM': FGM, 'label': label}
 
@@ -47,11 +53,11 @@ class CSIDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
         
-        data = torch.tensor(self.features[idx]).float().to(self.device)
+        data = torch.tensor(self.features[idx], device=self.device).float()
         # print(data.shape)
         if self.normalize:
             data = data * torch.numel(data)/ LA.norm(data)
-        label = torch.tensor(self.labels[idx]).long().to(self.device)
+        label = torch.tensor(self.labels[idx], device=self.device).long()
         return {'input': data, 'label': label}
 
 def getAcc(loader, model, noiseAmpRatio = 0.0, noiseType = 'random'):

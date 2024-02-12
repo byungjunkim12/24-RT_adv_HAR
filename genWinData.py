@@ -16,6 +16,7 @@ def main():
     dataPathBase = inputJson["dataPathBase"]
     dataType = inputJson["dataType"]
     thres = inputJson["threshold"]
+    padSize = inputJson["padSize"]
     inputJsonFile.close()
 
     if dataType == "survey":
@@ -24,6 +25,7 @@ def main():
         nRX = 3
         winLen = 1000
         slideLen = 400
+        dSampFactor = 2
 
         activities = ['bed', 'fall', 'pickup', 'run', 'sitdown', 'standup', 'walk']
 
@@ -33,7 +35,7 @@ def main():
         dataDict = {activity:[] for activity in activities}
         for activity in activities:
             dataDict[activity] = defaultdict(list)
-        windDataPath = dataPath + "window/"
+        windDataPath = dataPath + "window_pad_9/"
 
     elif dataType == "SHARP":
         dataPath = dataPathBase + "HAR_SHARP/"
@@ -45,20 +47,21 @@ def main():
             outputYYFileName = windDataPath + "yy_" + str(winLen) + "_" + str(thres) + "_" + activity + ".csv"
         print('Processing', activity+", # of files:", len(fileNameList))
 
-        xx = np.empty([0, winLen//2, nSubC*nRX], float)
-        yy = np.empty([0,8], float)
+        xx = np.empty([0, (winLen//dSampFactor + padSize), nSubC*nRX], float)
+        yy = np.empty([0, 8], float)
         for fileIndex, fileName in enumerate(fileNameList):
             data = np.array([[float(elm) for elm in v] for v in csv.reader(open(fileName, 'r'))])
-            x2 = np.empty([0, winLen//2, nSubC*nRX], float)
+            x2 = np.empty([0, (winLen//dSampFactor + padSize), nSubC*nRX], float)
             # y2 = np.empty([0, 8], float)
             # print(data.shape, end=' ')
 
             annotFileName = fileName.replace('input', 'annotation')
             annot = np.array([[str(elm) for elm in v] for v in csv.reader(open(annotFileName, 'r'))])
 
-            k = 0
-            while k <= (len(data) + 1 - 2*winLen):
-                x = np.dstack(data[k:k+winLen:2, 1:1+nSubC*nRX].T)
+            k = padSize * dSampFactor
+            smallestFirstJ = winLen
+            while k <= (len(data) + 1 - winLen):
+                x = np.dstack(data[(k-padSize*dSampFactor):k+winLen:dSampFactor, 1:1+nSubC*nRX].T)
                 ySamp = np.array(annot[k:k+winLen])
                 
                 bed = 0
@@ -69,6 +72,8 @@ def main():
                 sitdown = 0
                 standup = 0
                 noactivity = 0
+
+                # firstJ = -1
                 for j in range(winLen):
                     if ySamp[j] == "bed":
                         bed += 1
@@ -86,6 +91,11 @@ def main():
                         standup += 1
                     else:
                         noactivity += 1
+                    
+                    if ySamp[j] != "noactivity":
+                        firstJ = j
+                        if firstJ < smallestFirstJ:
+                            smallestFirstJ = firstJ
 
                 if bed > winLen * thres / 100:
                     yInd = 1
@@ -106,18 +116,21 @@ def main():
                 
                 # print(x.shape, y.shape)
                 if yInd != 0:
+                    # xPad = np.dstack(data[k-padSize*dSampFactor:k+winLen-padSize:2, 1:1+nSubC*nRX].T)
                     x2 = np.concatenate((x2, x), axis=0)
                     # y2 = np.concatenate((y2, y), axis=0)
                 k += slideLen
 
             xx = np.concatenate((xx, x2), axis=0)
+            # print('activity', activity, 'smallestFirstJ:', smallestFirstJ)
             # yy = np.concatenate((yy, y2),axis=0)
             # print(y.shape)
+        # print('Final smallestFirstJ:', smallestFirstJ)
 
         xx = xx.reshape(len(xx), -1)
         print(xx.shape)
 
-        with open(outputXXFileName, "w") as f:
+        with open(outputXXFileName, "w+") as f:
             writer = csv.writer(f)
             writer.writerows(xx)
         # with open(outputYYFileName, "w") as f:

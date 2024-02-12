@@ -16,12 +16,12 @@ class LSTMNet(nn.Module):
 
         self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size,
                           num_layers=num_layers, batch_first=True,
-                          bidirectional=bidirectional) #lstm
+                          bidirectional=bidirectional, device=self.device) #lstm
         # self.fc_1 =  nn.Linear(hidden_size, 128) #fully connected 1
         if bidirectional:
-            self.fc = nn.Linear(2*hidden_size*seq_length, nClasses) #fully connected last layer
+            self.fc = nn.Linear(2*hidden_size*seq_length, nClasses, device=self.device) #fully connected last layer
         else:
-            self.fc = nn.Linear(hidden_size*seq_length, nClasses) #fully connected last layer
+            self.fc = nn.Linear(hidden_size*seq_length, nClasses, device=self.device) #fully connected last layer
         self.relu = nn.ReLU()
         self.softmax = nn.Softmax(dim=1)
     
