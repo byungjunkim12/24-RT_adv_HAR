@@ -45,6 +45,7 @@ class CSIDataset(Dataset):
         self.labels = dataDict['label']
         self.device = device
         self.normalize = normalize
+        # self.padLen = padLen
 
     def __len__(self):
         return len(self.features)
@@ -52,21 +53,23 @@ class CSIDataset(Dataset):
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
-        
+            
         data = torch.tensor(self.features[idx], device=self.device).float()
-        # print(data.shape)
         if self.normalize:
             data = data * torch.numel(data)/ LA.norm(data)
+        # data = data[self.padLen:, :]
+
         label = torch.tensor(self.labels[idx], device=self.device).long()
         return {'input': data, 'label': label}
 
-def getAcc(loader, model, noiseAmpRatio = 0.0, noiseType = 'random'):
+def getAcc(loader, loaderPadLen, model, noiseAmpRatio = 0.0, noiseType = 'random'):
     '''
     get accuracy from predictions
     '''
-    pred_l,label_l = getPreds(loader, model,\
+    pred_l,label_l = getPreds(loader, loaderPadLen,\
+                            model,\
                             noiseAmpRatio=noiseAmpRatio,\
-                                noiseType=noiseType)
+                            noiseType=noiseType)
 
     correct = 0.
     for pred, label in zip(pred_l,label_l):
@@ -75,7 +78,7 @@ def getAcc(loader, model, noiseAmpRatio = 0.0, noiseType = 'random'):
     return correct/len(pred_l)
 
 
-def getPreds(loader, model, noiseAmpRatio = 0.0, noiseType = 'random', print_time = False):
+def getPreds(loader, loaderPadLen, model, noiseAmpRatio = 0.0, noiseType = 'random', print_time = False):
     # get predictions from network
     device = model.device
     model.eval()
@@ -87,6 +90,8 @@ def getPreds(loader, model, noiseAmpRatio = 0.0, noiseType = 'random', print_tim
 
     start = time.time()
     for batch in loader:
+        if loaderPadLen > 0:
+            batch['input'] = batch['input'][:, loaderPadLen:, :]
         inputFlatten = batch['input'].view(batch['input'].shape[0], -1)
         noiseAmp = LA.norm(inputFlatten, dim=1) * noiseAmpRatio
         if noiseType == 'random':
