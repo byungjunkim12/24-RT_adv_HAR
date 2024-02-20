@@ -3,6 +3,7 @@
     "noiseAmpRatio": 0.01,
     "trDataRatio": 0.3,
     "trExpDataRatio": 0.7,
+    "inputLenTime": 1,
     "trainConfig":{
         "num_iters": 2000,
         "num_steps_per_iter": 2000,

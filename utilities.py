@@ -45,7 +45,6 @@ class CSIDataset(Dataset):
         self.labels = dataDict['label']
         self.device = device
         self.normalize = normalize
-        # self.padLen = padLen
 
     def __len__(self):
         return len(self.features)
@@ -57,7 +56,6 @@ class CSIDataset(Dataset):
         data = torch.tensor(self.features[idx], device=self.device).float()
         if self.normalize:
             data = data * torch.numel(data)/ LA.norm(data)
-        # data = data[self.padLen:, :]
 
         label = torch.tensor(self.labels[idx], device=self.device).long()
         return {'input': data, 'label': label}
@@ -143,7 +141,7 @@ def getPredsGAIL(inputBatch, noiseBatch, labelBatch, model, noiseAmpRatio = 0.0,
     
     start = time.time()
 
-    inputFlatten = inputBatch.view(inputBatch.shape[0], -1)
+    inputFlatten = torch.reshape(inputBatch, (inputBatch.shape[0], -1))
     noiseAmp = LA.norm(inputFlatten, dim=1) * noiseAmpRatio
     noiseFlatten = noiseBatch.view(noiseBatch.shape[0], -1)
     noiseNormalized = torch.mul(torch.div(noiseFlatten, LA.norm(noiseFlatten, dim=1).unsqueeze(1)),\

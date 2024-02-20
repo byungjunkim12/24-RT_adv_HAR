@@ -99,6 +99,7 @@ class Discriminator(Module):
     def get_logits(self, states, actions):
         if self.discrete:
             actions = self.act_emb(actions.long())
+        
 
         sa = torch.cat([states, actions], dim=-1)
 
