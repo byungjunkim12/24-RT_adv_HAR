@@ -11,18 +11,18 @@ else:
 
 
 class PolicyNetwork(Module):
-    def __init__(self, state_dim, action_dim, discrete, device) -> None:
+    def __init__(self, state_dim, action_dim, nHidden, discrete, device) -> None:
         super().__init__()
 
         self.device = device
         self.net = Sequential(
-            Linear(state_dim, 50, device=self.device),
+            Linear(state_dim, nHidden, device=self.device),
             Tanh(),
-            Linear(50, 50, device=self.device),
+            Linear(nHidden, nHidden, device=self.device),
             Tanh(),
-            Linear(50, 50, device=self.device),
+            Linear(nHidden, nHidden, device=self.device),
             Tanh(),
-            Linear(50, action_dim, device=self.device),
+            Linear(nHidden, action_dim, device=self.device),
         ).to(self.device)
 
         self.state_dim = state_dim
@@ -48,18 +48,18 @@ class PolicyNetwork(Module):
 
 
 class ValueNetwork(Module):
-    def __init__(self, state_dim, device) -> None:
+    def __init__(self, state_dim, nHidden, device) -> None:
         super().__init__()
         
         self.device = device
         self.net = Sequential(
-            Linear(state_dim, 50, device=self.device),
+            Linear(state_dim, nHidden, device=self.device),
             Tanh(),
-            Linear(50, 50, device=self.device),
+            Linear(nHidden, nHidden, device=self.device),
             Tanh(),
-            Linear(50, 50, device=self.device),
+            Linear(nHidden, nHidden, device=self.device),
             Tanh(),
-            Linear(50, 1, device=self.device),
+            Linear(nHidden, 1, device=self.device),
         ).to(device)
 
     def forward(self, states):
@@ -67,11 +67,12 @@ class ValueNetwork(Module):
 
 
 class Discriminator(Module):
-    def __init__(self, state_dim, action_dim, discrete, device) -> None:
+    def __init__(self, state_dim, action_dim, nHidden, discrete, device) -> None:
         super().__init__()
 
         self.state_dim = state_dim
         self.action_dim = action_dim
+        self.nHidden = nHidden
         self.discrete = discrete
         self.device = device
 
@@ -84,13 +85,13 @@ class Discriminator(Module):
             self.net_in_dim = state_dim + action_dim
 
         self.net = Sequential(
-            Linear(self.net_in_dim, 50, device=self.device),
+            Linear(self.net_in_dim, nHidden, device=self.device),
             Tanh(),
-            Linear(50, 50, device=self.device),
+            Linear(nHidden, nHidden, device=self.device),
             Tanh(),
-            Linear(50, 50, device=self.device),
+            Linear(nHidden, nHidden, device=self.device),
             Tanh(),
-            Linear(50, 1, device=self.device),
+            Linear(nHidden, 1, device=self.device),
         ).to(self.device)
 
     def forward(self, states, actions):

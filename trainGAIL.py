@@ -49,6 +49,7 @@ def main():
     noiseAmpRatio = inputJson['noiseAmpRatio']
     trDataRatio = inputJson['trDataRatio']
     trExpDataRatio = inputJson['trExpDataRatio']
+    nHiddenGAIL = inputJson['nHiddenGAIL']
     GAILTrainConfig = inputJson['trainConfig']
     padLen = inputJson['padLen']
     inputLenTime = inputJson['inputLenTime']
@@ -128,7 +129,7 @@ def main():
 
     print('trExpLoader:', len(trExpLoader), 'trAgentLoader', len(trAgentLoader), 'tsLoader:', len(tsLoader))
 
-    model = GAIL(state_dim=nSubC*nRX*inputLenTime, action_dim=nSubC*nRX, padLen=padLen,\
+    model = GAIL(state_dim=nSubC*nRX*inputLenTime, action_dim=nSubC*nRX, nHidden=nHiddenGAIL, padLen=padLen,\
                  inputLenTime=inputLenTime, discrete=False, device=device, train_config=GAILTrainConfig)
     saveFileName = LSTMModelName + '_' + inputJsonFileName
     if loadModel:
@@ -144,6 +145,7 @@ class GAIL(Module):
         self,
         state_dim,
         action_dim,
+        nHidden,
         padLen,
         inputLenTime,
         discrete,
@@ -154,15 +156,16 @@ class GAIL(Module):
 
         self.state_dim = state_dim
         self.action_dim = action_dim
+        self.nHidden = nHidden
         self.padLen = padLen
         self.inputLenTime = inputLenTime
         self.discrete = discrete
         self.device = device
         self.train_config = train_config
 
-        self.pi = PolicyNetwork(self.state_dim, self.action_dim, self.discrete, self.device)
-        self.v = ValueNetwork(self.state_dim, self.device)
-        self.d = Discriminator(self.state_dim, self.action_dim, self.discrete, self.device)
+        self.pi = PolicyNetwork(self.state_dim, self.action_dim, self.nHidden, self.discrete, self.device)
+        self.v = ValueNetwork(self.state_dim, self.nHidden, self.device)
+        self.d = Discriminator(self.state_dim, self.action_dim, self.nHidden, self.discrete, self.device)
 
     def get_networks(self):
         return [self.pi, self.v]
@@ -271,6 +274,7 @@ class GAIL(Module):
 
         print('nDataTrExp:', nDataTrExp, 'nDataTrAgent:', nDataTrAgent, 'nDataTs:', int(nDataTs))
         bestAcc = 1.0
+        accHistory = np.zeros((num_iters, len(noiseAmpRatioList)))
         for i in range(num_iters):
             if lineBreakCount != 0 and i!= 0:
                 print('')
@@ -283,7 +287,7 @@ class GAIL(Module):
             gms = []
 
             correct = [0. for _ in noiseAmpRatioList]
-            for _, trAgentBatch in enumerate(trAgentLoader):
+            for trAgentBatchIndex, trAgentBatch in enumerate(trAgentLoader):
                 seqLength = trAgentBatch['obs'].shape[1] - self.padLen
                 # obsAmp = LA.norm(trAgentBatch['obs'].view(trAgentBatch['obs'].shape[0], -1), dim=1)
                 obsBatch = torch.Tensor().to(self.device)
@@ -309,9 +313,9 @@ class GAIL(Module):
                 retsBatch = torch.Tensor().to(self.device)
                 advsBatch = torch.Tensor().to(self.device)
                 gmsBatch = torch.Tensor().to(self.device)
-                for i, trAgentData in enumerate(obsBatch):
+                for trAgentIndex, trAgentData in enumerate(obsBatch):
                     ep_obs = trAgentData
-                    ep_acts = torch.squeeze(actBatch[i, :, :])
+                    ep_acts = torch.squeeze(actBatch[trAgentIndex, :, :])
                     ep_gms = torch.pow(gae_gamma, torch.arange(seqLength)).to(self.device)
                     ep_lmbs = torch.pow(gae_lambda, torch.arange(seqLength)).to(self.device)
                                         
@@ -452,13 +456,18 @@ class GAIL(Module):
             for noiseAmpIndex, noiseAmpRatio in enumerate(noiseAmpRatioList):
                 print('[{0}, {1:.3f}]'.\
                         format(noiseAmpRatio, correct[noiseAmpIndex]/nDataTrAgent), end=' ')
+                accHistory[i, noiseAmpIndex] = correct[noiseAmpIndex]/nDataTrAgent
 
                 lineBreakCount += 1
                 if lineBreakCount == 4:
                     print('')
                     lineBreakCount = 0
 
+            with open('./savedModels/GAIL/logs/' + saveFileName + '_accHistory.npy', 'wb') as f:
+                np.save(f, accHistory)
+            
             compAmpRatio = np.where(np.array(noiseAmpRatioList) == ampSaveCriterion)[0][0]
+
             if correct[compAmpRatio]/nDataTrAgent < bestAcc:
                 bestAcc = correct[compAmpRatio]/nDataTrAgent
                 torch.save(self.pi.state_dict(), './savedModels/GAIL/' + saveFileName + '_pi.cpkt')
