@@ -25,7 +25,7 @@ from utilitiesDL import *
 
 
 def main():
-    torch.multiprocessing.set_start_method('spawn')
+    # torch.multiprocessing.set_start_method('spawn')
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', "--inputJson", type=str, help='input JSON filename')
     parser.add_argument('-c', "--cuda", type=int, default=0, help='cuda device number')
@@ -53,7 +53,9 @@ def main():
     GAILTrainConfig = inputJson['trainConfig']
     padLen = inputJson['padLen']
     inputLenTime = inputJson['inputLenTime']
+    outputLenTime = inputJson['outputLenTime']
     batchSize = inputJson['batchSize']
+    trainAct = inputJson['trainAct']
     
     torch.set_num_threads(1)
 
@@ -107,17 +109,18 @@ def main():
         dataDict[activity]['label'] =\
             actInd * torch.ones_like(torch.empty(dataDict[activity]['obs'].shape[0], device=device), dtype=int).to(device)
 
-        datasetAct = FGMDataset(dataDict[activity], device)
-        trExpDataset.append(torch.utils.data.Subset(datasetAct,\
-                                                    range(int(trDataRatio*trExpDataRatio*len(datasetAct)))))
-        trAgentDataset.append(torch.utils.data.Subset(datasetAct,\
-                                                    range(int(trDataRatio*trExpDataRatio*len(datasetAct)),\
-                                                            int(trDataRatio*len(datasetAct)))))
-        tsDataset.append(torch.utils.data.Subset(datasetAct,\
-                                                range(int(trDataRatio*len(datasetAct)), len(datasetAct))))
+        if activity in trainAct:
+            datasetAct = FGMDataset(dataDict[activity], device)
+            trExpDataset.append(torch.utils.data.Subset(datasetAct,\
+                                                        range(int(trDataRatio*trExpDataRatio*len(datasetAct)))))
+            trAgentDataset.append(torch.utils.data.Subset(datasetAct,\
+                                                        range(int(trDataRatio*trExpDataRatio*len(datasetAct)),\
+                                                                int(trDataRatio*len(datasetAct)))))
+            tsDataset.append(torch.utils.data.Subset(datasetAct,\
+                                                    range(int(trDataRatio*len(datasetAct)), len(datasetAct))))
 
-        print('activity:', activity, 'trExpDataset:', len(trExpDataset[-1]),\
-            'trAgentDataset:', len(trAgentDataset[-1]), 'tsDataset:', len(tsDataset[-1]))
+            print('activity:', activity, 'trExpDataset:', len(trExpDataset[-1]),\
+                'trAgentDataset:', len(trAgentDataset[-1]), 'tsDataset:', len(tsDataset[-1]))
 
 
     trExpLoader = DataLoader(torch.utils.data.ConcatDataset(trExpDataset),\
@@ -129,8 +132,15 @@ def main():
 
     print('trExpLoader:', len(trExpLoader), 'trAgentLoader', len(trAgentLoader), 'tsLoader:', len(tsLoader))
 
-    model = GAIL(state_dim=nSubC*nRX*inputLenTime, action_dim=nSubC*nRX, nHidden=nHiddenGAIL, padLen=padLen,\
-                 inputLenTime=inputLenTime, discrete=False, device=device, train_config=GAILTrainConfig)
+    model = GAIL(state_dim=nSubC*nRX,\
+                action_dim=nSubC*nRX,\
+                nHidden=nHiddenGAIL,\
+                padLen=padLen,\
+                inputLenTime=inputLenTime,\
+                outputLenTime=outputLenTime,\
+                discrete=False,\
+                device=device,\
+                train_config=GAILTrainConfig)
     saveFileName = LSTMModelName + '_' + inputJsonFileName
     if loadModel:
         model.pi.load_state_dict(torch.load('./savedModels/GAIL/' + saveFileName + '_pi.cpkt'))
@@ -139,6 +149,7 @@ def main():
         print('model loaded!')
 
     model.train(HARNet, trExpLoader, trAgentLoader, tsLoader, saveFileName)
+    return 0
 
 class GAIL(Module):
     def __init__(
@@ -148,6 +159,7 @@ class GAIL(Module):
         nHidden,
         padLen,
         inputLenTime,
+        outputLenTime,
         discrete,
         device,
         train_config=None
@@ -159,13 +171,19 @@ class GAIL(Module):
         self.nHidden = nHidden
         self.padLen = padLen
         self.inputLenTime = inputLenTime
+        self.outputLenTime = outputLenTime
         self.discrete = discrete
         self.device = device
         self.train_config = train_config
 
-        self.pi = PolicyNetwork(self.state_dim, self.action_dim, self.nHidden, self.discrete, self.device)
-        self.v = ValueNetwork(self.state_dim, self.nHidden, self.device)
-        self.d = Discriminator(self.state_dim, self.action_dim, self.nHidden, self.discrete, self.device)
+        self.pi = PolicyNetwork(self.state_dim * self.inputLenTime,\
+                                self.action_dim * self.outputLenTime,\
+                                self.nHidden, self.discrete, self.device)
+        self.v = ValueNetwork(self.state_dim * self.inputLenTime,\
+                              self.nHidden, self.device)
+        self.d = Discriminator(self.state_dim * self.inputLenTime,\
+                            self.action_dim * self.outputLenTime,\
+                            self.nHidden, self.discrete, self.device)
 
     def get_networks(self):
         return [self.pi, self.v]
@@ -235,18 +253,19 @@ class GAIL(Module):
         for tsBatch in tsLoader:
             nDataTs += tsBatch['obs'].shape[0]
 
+        lineBreakCount = 0
         for noiseAmpRatio in noiseAmpRatioList:
-            correct = 0.            
+            correct = 0.
             for trAgentBatch in trAgentLoader:
+                seqLength = (trAgentBatch['obs'].shape[1] - self.padLen) // self.outputLenTime
                 trObsBatchwoPad = trAgentBatch['obs'][:, self.padLen:, :]
                 pred_l,label_l = getPredsGAIL(trObsBatchwoPad, trAgentBatch['FGM'], trAgentBatch['label'],\
                                               HARNet, noiseAmpRatio)
                 for pred, label in zip(pred_l, label_l):
                     correct += (pred == label)
             print('[{0}, {1:.3f}]'.format(noiseAmpRatio, correct/nDataTrAgent), end=' ')
-
             lineBreakCount += 1
-            if lineBreakCount == 4:
+            if lineBreakCount == 5:
                 print('')
                 lineBreakCount = 0
         if lineBreakCount != 0:
@@ -256,9 +275,10 @@ class GAIL(Module):
         print('[ampRatio, Acc.]:', end=' ')
         for noiseAmpRatio in noiseAmpRatioList:
             correct = 0.
+            lineBreakCount = 0
             for trAgentBatch in trAgentLoader:
                 trObsBatchwoPad = trAgentBatch['obs'][:, self.padLen:, :]
-                noiseBatch = torch.randn(trObsBatchwoPad.shape).to(self.device)
+                noiseBatch = torch.randn(trObsBatchwoPad.shape, device=self.device)
                 pred_l,label_l = getPredsGAIL(trObsBatchwoPad, noiseBatch, trAgentBatch['label'],\
                                               HARNet, noiseAmpRatio)
                 for pred, label in zip(pred_l, label_l):
@@ -266,7 +286,7 @@ class GAIL(Module):
                 # accuracyList.append(correct/nData)
             print('[{0}, {1:.3f}]'.format(noiseAmpRatio, correct/nDataTrAgent), end=' ')
             lineBreakCount += 1
-            if lineBreakCount == 4:
+            if lineBreakCount == 5:
                 print('')
                 lineBreakCount = 0
         if lineBreakCount != 0:
@@ -287,23 +307,31 @@ class GAIL(Module):
             gms = []
 
             correct = [0. for _ in noiseAmpRatioList]
-            for trAgentBatchIndex, trAgentBatch in enumerate(trAgentLoader):
-                seqLength = trAgentBatch['obs'].shape[1] - self.padLen
+            for _, trAgentBatch in enumerate(trAgentLoader):
+                seqLength = (trAgentBatch['obs'].shape[1] - self.padLen) // self.outputLenTime
                 # obsAmp = LA.norm(trAgentBatch['obs'].view(trAgentBatch['obs'].shape[0], -1), dim=1)
                 obsBatch = torch.Tensor().to(self.device)
                 for inputLenIndex in range(self.inputLenTime):
                     obsBatch = torch.cat((obsBatch,\
                         trAgentBatch['obs'][:, (self.padLen-self.inputLenTime+inputLenIndex+1):\
-                                            (self.padLen-self.inputLenTime+inputLenIndex+1+seqLength),:]), dim=2)
+                                            (self.padLen-self.inputLenTime+inputLenIndex+1+\
+                                            (seqLength*self.outputLenTime)):self.outputLenTime,:]), dim=2)
+                obsBatchFlatten = obsBatch.reshape(-1, obsBatch.shape[2])
 
-                obsBatchFlatten = obsBatch.transpose(0, 1).reshape(-1, obsBatch.shape[2])
                 actBatchFlatten = self.act(obsBatchFlatten)
-                actBatch = torch.reshape(actBatchFlatten, ([-1] + list(trAgentBatch['FGM'].shape[1:]))).to(self.device)
+                actBatch = actBatchFlatten.reshape(seqLength, -1,\
+                    self.action_dim*self.outputLenTime).transpose(0,1)
                 
-                obsLastBatch = obsBatch[:, :, -trAgentBatch['obs'].shape[2]:]
+                obsLastBatch = trAgentBatch['obs'][:, self.padLen:, :]
+                actLastBatch = torch.zeros((actBatch.shape[0],\
+                    (seqLength*self.outputLenTime), self.action_dim), device=self.device)
+                for outputLenIndex in range(self.outputLenTime):
+                    actLastBatch[:, outputLenIndex::self.outputLenTime, :] =\
+                        actBatch[:, :, outputLenIndex*self.action_dim:(outputLenIndex+1)*self.action_dim]
+
                 for noiseAmpIndex, noiseAmpRatio in enumerate(noiseAmpRatioList):
-                    pred_l,label_l = getPredsGAIL(obsLastBatch, actBatch, trAgentBatch['label'],\
-                                                    HARNet, noiseAmpRatio)
+                    pred_l,label_l = getPredsGAIL(obsLastBatch,\
+                                                  actLastBatch, trAgentBatch['label'], HARNet, noiseAmpRatio)
                     for pred, label in zip(pred_l, label_l):
                         correct[noiseAmpIndex] += (pred == label)
                     
@@ -350,21 +378,25 @@ class GAIL(Module):
             self.d.train()
             expScores = torch.Tensor().to(self.device)
             for trExpBatch in trExpLoader:
-                seqLength = trExpBatch['obs'].shape[1] - self.padLen
-                # expObsBatch = trExpBatch['obs'][:, padLen:, :]
-                # obsAmp = LA.norm(trAgentBatch['obs'].view(trAgentBatch['obs'].shape[0], -1), dim=1)
-                expObsBatch = torch.Tensor().to(self.device)
+                expObsBatch = torch.Tensor(device=self.device)
                 for inputLenIndex in range(self.inputLenTime):
                     expObsBatch = torch.cat((expObsBatch,\
                         trExpBatch['obs'][:, (self.padLen-self.inputLenTime+inputLenIndex+1):\
-                                            (self.padLen-self.inputLenTime+inputLenIndex+1+seqLength),:]), dim=2)
+                                            (self.padLen-self.inputLenTime+inputLenIndex+1+\
+                                            (seqLength*self.outputLenTime)):self.outputLenTime,:]), dim=2)
+                expObsBatch = expObsBatch.reshape(-1, expObsBatch.shape[2])
 
-                expObsBatch = expObsBatch.transpose(0, 1).reshape(-1, expObsBatch.shape[2])
-                expActBatch = trExpBatch['FGM'].transpose(0, 1).reshape(-1, trExpBatch['FGM'].shape[2])
+                expActBatch = torch.zeros((trExpBatch['FGM'].shape[0],\
+                                           seqLength, self.action_dim*self.outputLenTime), device=self.device)
+                for outputLenIndex in range(self.outputLenTime):
+                    expActBatch[:, :, outputLenIndex*self.action_dim:(outputLenIndex+1)*self.action_dim] =\
+                        trExpBatch['FGM'][:, outputLenIndex::self.outputLenTime, :]
+                expActBatch = expActBatch.reshape(-1, expActBatch.shape[2])
+
                 # expScores = self.d.get_logits(expObsBatch, expActBatch)
                 expScores = torch.cat((expScores, self.d.get_logits(expObsBatch, expActBatch)), dim=0)
-                
-            agentScores = torch.Tensor().to(self.device)
+
+            agentScores = torch.Tensor(device=self.device)
             for agentObsBatch, agentActsBatch in zip(obs, acts):
                 agentScores = torch.cat((agentScores, self.d.get_logits(agentObsBatch, agentActsBatch)), dim=0)
             
@@ -428,7 +460,7 @@ class GAIL(Module):
                     cov = distb.covariance_matrix.sum(-1)
                     return (0.5) * ((old_cov / cov).sum(-1)\
                             + (((old_mean - mean) ** 2) / cov).sum(-1)
-                            - self.action_dim
+                            - (self.action_dim * self.outputLenTime)
                             + torch.log(cov).sum(-1)
                             - torch.log(old_cov).sum(-1)).mean()
 

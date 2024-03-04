@@ -143,7 +143,7 @@ def getPredsGAIL(inputBatch, noiseBatch, labelBatch, model, noiseAmpRatio = 0.0,
 
     inputFlatten = torch.reshape(inputBatch, (inputBatch.shape[0], -1))
     noiseAmp = LA.norm(inputFlatten, dim=1) * noiseAmpRatio
-    noiseFlatten = noiseBatch.view(noiseBatch.shape[0], -1)
+    noiseFlatten = torch.reshape(noiseBatch, (noiseBatch.shape[0], -1))
     noiseNormalized = torch.mul(torch.div(noiseFlatten, LA.norm(noiseFlatten, dim=1).unsqueeze(1)),\
             noiseAmp.unsqueeze(1))
     noise = noiseNormalized.view(inputBatch.shape)
