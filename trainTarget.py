@@ -134,7 +134,6 @@ def main():
             trLabel = trData['label']
             
             trOutput = HARNet(trInput)
-            # print(trOutput)
             trloss = LSTMLoss(trOutput, trLabel)
             trloss.backward()
             opt.step()
