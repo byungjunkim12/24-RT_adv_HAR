@@ -54,13 +54,14 @@ class FGMDataset(Dataset):
         return {'obs': obs, 'FGM': FGM, 'label': label}
 
 class CSIDataset(Dataset):
-    def __init__(self, dataDict, device, normalize=False, nSubC=1, nRX=1):
+    def __init__(self, dataDict, device, normalize=False, nSubC=1, nRX=1, padLen=0):
         self.features = dataDict['input'] # using IQ sample value
         self.labels = dataDict['label']
         self.device = device
         self.normalize = normalize
         self.nSubC = nSubC
         self.nRX = nRX
+        self.padLen = padLen
 
     def __len__(self):
         return len(self.features)
@@ -70,31 +71,11 @@ class CSIDataset(Dataset):
             idx = idx.tolist()
             
         data = torch.tensor(self.features[idx], device=self.device).float()
+        data = data[self.padLen:, :]
         if self.normalize:
             data = data * torch.numel(data) /\
                 (LA.norm(data) * self.nSubC * self.nRX)
         # print(LA.norm(data))
-
-        label = torch.tensor(self.labels[idx], device=self.device).long()
-        return {'input': data, 'label': label}
-
-class VariableCSIDataset(Dataset):
-    def __init__(self, dataDict, device, normalize=True):
-        self.features = dataDict['input'] # using IQ sample value
-        self.labels = dataDict['label']
-        self.device = device
-        self.normalize = normalize
-
-    def __len__(self):
-        return len(self.features)
-
-    def __getitem__(self, idx):
-        if torch.is_tensor(idx):
-            idx = idx.tolist()
-            
-        data = torch.tensor(self.features[idx], device=self.device).float()
-        if self.normalize:
-            data = data * torch.numel(data)/ LA.norm(data)
 
         label = torch.tensor(self.labels[idx], device=self.device).long()
         return {'input': data, 'label': label}

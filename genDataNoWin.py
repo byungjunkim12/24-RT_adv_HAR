@@ -32,7 +32,7 @@ def main():
     dataDict = {activity:[] for activity in activities}
     for activity in activities:
         dataDict[activity] = defaultdict(list)
-    noWindDataPath = dataPath + "noWin_pad" + str(padLen) + "/"
+    noWindDataPath = dataPath + "noWin_pad_" + str(padLen) + "/"
 
     for activity in activities:
         if dataType == "survey":
@@ -58,4 +58,5 @@ def main():
 
         np.save(outputXXFileName, np.array(dataList, dtype=object), allow_pickle=True)
 
-
+if __name__ == "__main__":
+    main()
