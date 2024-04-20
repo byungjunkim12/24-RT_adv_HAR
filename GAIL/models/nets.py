@@ -41,6 +41,7 @@ class PolicyNetwork(Module):
 
             std = torch.exp(self.log_std).to(self.device)
             cov_mtx = torch.eye(self.action_dim).to(self.device) * (std ** 2)
+            # print('mean:', torch.numel(mean.view(-1)), torch.isnan(mean.view(-1)).sum().item(), 'covMtx:', cov_mtx.shape, torch.numel(cov_mtx.view(-1)), torch.isnan(cov_mtx.view(-1)).sum().item())
 
             distb = MultivariateNormal(mean, cov_mtx)
 

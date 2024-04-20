@@ -63,14 +63,13 @@ class LSTMNet(nn.Module):
     
 
 class VariableLSTMNet(nn.Module):
-    def __init__(self, nClasses, input_size, bidirectional, hidden_size, num_layers, longestLen, device):
+    def __init__(self, nClasses, input_size, bidirectional, hidden_size, num_layers, device):
         super(VariableLSTMNet, self).__init__()
         self.nClasses = nClasses #number of classes
         self.num_layers = num_layers #number of layers
         self.input_size = input_size #input size
         self.bidirectional = bidirectional #flag indicating whether LSTM is bidirectional
         self.hidden_size = hidden_size #hidden state
-        self.longestLen = longestLen
         self.device = device
 
         self.lstm = nn.LSTM(input_size=input_size,\

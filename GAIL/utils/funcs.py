@@ -50,6 +50,7 @@ def rescale_and_linesearch(
     g, s, Hs, max_kl, L, kld, old_params, pi, max_iter=10,
     success_ratio=0.1
 ):
+    # print('start of resandlin:', g.shape[0], 'nanCount g:', torch.isnan(g).sum().item(), 'oldP:', torch.isnan(old_params).sum().item())
     set_params(pi, old_params)
     L_old = L().detach()
 
@@ -57,6 +58,7 @@ def rescale_and_linesearch(
 
     for _ in range(max_iter):
         new_params = old_params + beta * s
+        # print('inside for:', torch.isnan(new_params).sum().item())
 
         set_params(pi, new_params)
         kld_new = kld().detach()
@@ -74,5 +76,5 @@ def rescale_and_linesearch(
 
         beta *= 0.5
 
-    print("The line search was failed!")
+    print("The line search was failed!", g.shape)
     return old_params

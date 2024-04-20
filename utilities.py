@@ -25,12 +25,15 @@ def init_weights(m):
         m.bias.data.fill_(0.1)
 
 class FGMDataset(Dataset):
-    def __init__(self, dataDict, device, normalize=True):
+    def __init__(self, dataDict, device, normalize=True, nSubC=30, nRX=3, padLen=0, noiseAmpRatio=0.0):
         self.device = device
-        self.obs = dataDict['obs'].float() # using IQ sample value
-        self.FGM = dataDict['FGM'].float()
+        self.obs = dataDict['obs'] # using IQ sample value
+        self.FGM = dataDict['FGM']
         self.labels = dataDict['label'].long()
         self.normalize = normalize
+        self.nSubC = nSubC
+        self.nRX = nRX
+        self.noiseAmpRatio = noiseAmpRatio
 
     def __len__(self):
         return len(self.obs)
@@ -39,18 +42,18 @@ class FGMDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        obs = self.obs[idx].clone().detach().requires_grad_(True)
+        obs = self.obs[idx]
+        FGM = self.FGM[idx]
+        # obs = self.obs[idx].clone().detach().requires_grad_(True)
+        # FGM = self.FGM[idx].clone().detach().requires_grad_(True)
         # torch.tensor(self.obs[idx], device=self.device)
         if self.normalize:
-            obs = obs * torch.numel(obs)/ LA.norm(obs)
-        FGM = self.FGM[idx].clone().detach().requires_grad_(True)
+            obs = obs.to(self.device) * torch.numel(obs) /\
+                (LA.norm(obs).to(self.device) * self.nSubC * self.nRX)
+            FGM = FGM.to(self.device) * torch.numel(FGM) /\
+                (LA.norm(FGM).to(self.device) * self.nSubC * self.nRX) * self.noiseAmpRatio
         label = self.labels[idx].clone().detach()
-        # obs = self.obs[idx]
-        # if self.normalize:
-        #     obs = obs * torch.numel(obs)/ LA.norm(obs)
-        # FGM = self.FGM[idx]
-        # label = self.labels[idx]
-
+        
         return {'obs': obs, 'FGM': FGM, 'label': label}
 
 class CSIDataset(Dataset):
@@ -136,8 +139,9 @@ def getPreds(loader, loaderPadLen, model, variableLen=False, noiseAmpRatio = 0.0
                             noiseAmp.unsqueeze(1))
 
         # print(LA.norm(batchInput), LA.norm(noise))
-        noiseInputFlatten = inputFlatten + noise
-        batchInput = noiseInputFlatten.view(batchInput.shape)
+        inputNoiseFlatten = inputFlatten + noise
+        batchInput = inputNoiseFlatten.view(batchInput.shape)
+        print(LA.norm(inputFlatten).item(), LA.norm(noise).item())
 
         outputs = model(batchInput)
 
@@ -151,31 +155,31 @@ def getPreds(loader, loaderPadLen, model, variableLen=False, noiseAmpRatio = 0.0
     return pred_l, label_l
 
 
-def getPredsGAIL(inputBatch, noiseBatch, labelBatch, model, noiseAmpRatio = 0.0, print_time = False):
+def getPredsGAIL(obs, noises, labels, model, noiseAmpRatio=0.0, padLen=0, print_time = False):
     # get predictions from network
     device = model.device
     model.eval()
     pred_l   = []
     label_l = [] 
     
-    start = time.time()
+    # start = time.time()
+    for ob, noise, label in zip(obs, noises, labels):
+        obWoPad = ob[padLen:, :]
+        # print('obWoPad:', obWoPad.shape, 'noise:', noise.shape, noiseAmpRatio)
+        # print(noise)
+        obFlatten = torch.flatten(obWoPad)
+        noiseAmp = LA.norm(obFlatten) * noiseAmpRatio
+        noiseFlatten = torch.flatten(noise)
+        noiseNormalized = torch.mul(torch.div(noiseFlatten, LA.norm(noiseFlatten)),\
+                noiseAmp)
+        noise = noiseNormalized.view(obWoPad.shape)
 
-    inputFlatten = torch.reshape(inputBatch, (inputBatch.shape[0], -1))
-    noiseAmp = LA.norm(inputFlatten, dim=1) * noiseAmpRatio
-    noiseFlatten = torch.reshape(noiseBatch, (noiseBatch.shape[0], -1))
-    noiseNormalized = torch.mul(torch.div(noiseFlatten, LA.norm(noiseFlatten, dim=1).unsqueeze(1)),\
-            noiseAmp.unsqueeze(1))
-    noise = noiseNormalized.view(inputBatch.shape)
+        obWNoise = obWoPad + noise
+        obWNoise = obWoPad.to(device) + noise.to(device)
+        # print(LA.norm(obWoPad).item(), LA.norm(noise).item())
+        outputs = model(obWNoise.unsqueeze(0))
 
-    batchInput = inputBatch + noise
-
-    outputs = model(batchInput)
-
-    pred_l.extend(outputs.detach().max(dim=1).indices.cpu().tolist())
-    label_l.extend(labelBatch.cpu().tolist())
+        pred_l.extend(outputs.detach().max(dim=1).indices.cpu().tolist())
+        label_l.append(label.cpu())
         
-    if print_time:
-        end = time.time()
-        print('time per example:', (end-start)/len(label_l))
-
     return pred_l, label_l
