@@ -54,7 +54,8 @@ def main():
     padLen = inputJson['padLen']
     inputLenTime = inputJson['inputLenTime']
     outputLenTime = inputJson['outputLenTime']
-    # batchSize = inputJson['batchSize']
+    dSampFactor = inputJson['dSampFactor']
+    delayLen = inputJson['delayLen']
     trainAct = inputJson['trainAct']
     
     torch.set_num_threads(1)
@@ -69,8 +70,6 @@ def main():
         fs = 1000 # 1 kHz
         nSubC = 30
         nRX = 3
-        
-        winLen = 1000
         activities = ['bed', 'fall', 'run', 'sitdown', 'standup', 'walk']
 
     LSTMType = LSTMModelName.split('_')[1]
@@ -88,7 +87,7 @@ def main():
     HARNet.load_state_dict(torch.load(LSTMModelDir + LSTMModelName + '.cpkt', map_location=cudaLoc))
 
     # Load dataset labelled with FGM attack
-    FGMdatasetDir = '/project/iarpa/wifiHAR/HAR_' + dataType + '/noWin_pad_' + str(padLen) + '_FGM/'
+    FGMdatasetDir = '/project/iarpa/wifiHAR/HAR_' + dataType + '/noWin_dSamp_' + str(dSampFactor) + '_pad_' + str(padLen) + '_FGM/'
     dataDict = {file:[] for file in activities}
 
     trExpDataset = list()
@@ -107,14 +106,15 @@ def main():
                 dataDict[activity]['FGM'].append(FGM)
 
             dataDict[activity]['label'] =\
-                (actInd) * torch.ones_like(torch.empty(len(dataDict[activity]['obs']), device=device), dtype=int)
+                (actInd) * torch.ones_like(torch.empty(len(dataDict[activity]['obs']),\
+                                                    device=device), dtype=int)
 
             datasetAct = FGMDataset(dataDict[activity], device, noiseAmpRatio=noiseAmpRatio, padLen=padLen)
             trExpDataset.append(torch.utils.data.Subset(datasetAct,\
-                                                        range(int(trDataRatio*trExpDataRatio*len(datasetAct)))))
+                                                    range(int(trDataRatio*trExpDataRatio*len(datasetAct)))))
             trAgentDataset.append(torch.utils.data.Subset(datasetAct,\
-                                                        range(int(trDataRatio*trExpDataRatio*len(datasetAct)),\
-                                                                int(trDataRatio*len(datasetAct)))))
+                                                    range(int(trDataRatio*trExpDataRatio*len(datasetAct)),\
+                                                    int(trDataRatio*len(datasetAct)))))
             tsDataset.append(torch.utils.data.Subset(datasetAct,\
                                                     range(int(trDataRatio*len(datasetAct)), len(datasetAct))))
 
@@ -137,6 +137,7 @@ def main():
                 padLen=padLen,\
                 inputLenTime=inputLenTime,\
                 outputLenTime=outputLenTime,\
+                delayLen=delayLen,\
                 discrete=False,\
                 device=device,\
                 train_config=GAILTrainConfig)
@@ -159,6 +160,7 @@ class varGAIL(Module):
         padLen,
         inputLenTime,
         outputLenTime,
+        delayLen,
         discrete,
         device,
         train_config=None
@@ -172,6 +174,7 @@ class varGAIL(Module):
         self.padLen = padLen
         self.inputLenTime = inputLenTime
         self.outputLenTime = outputLenTime
+        self.delayLen = delayLen
         self.device = device
         self.train_config = train_config
 
@@ -221,7 +224,7 @@ class varGAIL(Module):
         print('nDataTrExp:', nDataTrExp, 'nDataTrAgent:', nDataTrAgent, 'nDataTs:', int(nDataTs),\
               'inputLen:', self.inputLenTime, 'outputLen:', self.outputLenTime)
         
-        noiseAmpRatioList = [0.01, 0.5, 0.1, 0.2]
+        noiseAmpRatioList = [0.01, 0.05, 0.1, 0.2, 0.5, 1]
         
         print("----White-box attack performance (Expert)----")
         print('[ampRatio, Acc.]:', end=' ')
@@ -236,7 +239,7 @@ class varGAIL(Module):
                 correct += (pred == label)
             print('[{0}, {1:.3f}]'.format(noiseAmpRatio, correct/nDataTrAgent), end=' ')
             lineBreakCount += 1
-            if lineBreakCount == 5:
+            if lineBreakCount == 6 and lineBreakCount != len(noiseAmpRatioList):
                 print('')
                 lineBreakCount = 0
         if lineBreakCount != 0:
@@ -256,20 +259,20 @@ class varGAIL(Module):
                 # accuracyList.append(correct/nData)
             print('[{0}, {1:.3f}]'.format(noiseAmpRatio, correct/nDataTrAgent), end=' ')
             lineBreakCount += 1
-            if lineBreakCount == 5:
+            if lineBreakCount == 6 and lineBreakCount != len(noiseAmpRatioList):
                 print('')
                 lineBreakCount = 0
         if lineBreakCount != 0:
             print('')
 
         print("GAIL training starts!")
-        bestAcc = 1.001
+        bestAcc = [1.001, 1.001]
         accHistory = np.zeros((num_iters, len(noiseAmpRatioList)))
         scoreVHistory = np.zeros((num_iters, 3)) # 0:agentScore, 1:expScore, 2:v
         for iIter in range(num_iters):
             if lineBreakCount != 0 and iIter!= 0:
                 print('')
-            print('Iter {}'.format(iIter), end=' ')
+            print('It {}'.format(iIter), end=' ')
 
             obs = []
             acts = []
@@ -284,8 +287,8 @@ class varGAIL(Module):
                 obsData = torch.Tensor().to(self.device)
                 for inputIndex in range(self.inputLenTime):
                     obsData = torch.cat((obsData, trAgentData['obs']\
-                                         [:, self.padLen-self.inputLenTime+inputIndex+1:\
-                                        self.padLen-self.inputLenTime+inputIndex+seqLength+1, :]), dim=2)
+                            [:, self.padLen - self.inputLenTime + inputIndex - self.delayLen + 1:\
+                            self.padLen - self.inputLenTime + inputIndex - self.delayLen + seqLength + 1, :]), dim=2)
                 # obsData = torch.cat((obsData, trAgentData['obs'][:, padLen:, :]), dim=2)
                 obsDataSq = torch.squeeze(obsData, 0)
                 actsDataSq = self.act(obsDataSq)
@@ -317,8 +320,11 @@ class varGAIL(Module):
                 # print(currVals.shape, nextVals.shape, deltasData.shape, advsData.shape)
 
                 for noiseAmpIndex, noiseAmpRatio in enumerate(noiseAmpRatioList):
-                    pred, label = getPredsGAIL(obsData[:, :, -(self.state_dim):],\
-                                               actsData, trAgentData['label'], HARNet, noiseAmpRatio)
+                    pred, label = getPredsGAIL(trAgentData['obs'][:, self.padLen:,:],\
+                                            actsData,\
+                                            trAgentData['label'],\
+                                            HARNet,\
+                                            noiseAmpRatio)
                     # print(pred_l, label_l)
                     # for pred, label in zip(pred_l, label_l):
                     correct[noiseAmpIndex] += (pred == label)
@@ -347,8 +353,8 @@ class varGAIL(Module):
                 expObsData = torch.Tensor().to(self.device)
                 for inputIndex in range(self.inputLenTime):
                     expObsData = torch.cat((expObsData, trExpData['obs']\
-                                        [:, self.padLen-self.inputLenTime+inputIndex+1:\
-                                    self.padLen-self.inputLenTime+inputIndex+seqLength+1, :]), dim=2)
+                            [:, self.padLen - self.inputLenTime + inputIndex - self.delayLen + 1:\
+                            self.padLen - self.inputLenTime + inputIndex - self.delayLen + seqLength + 1, :]), dim=2)
                 # expObsData = torch.cat((expObsData, trExpData['obs'][:, padLen:, :]), dim=2)
                 expObsDataSq = torch.squeeze(expObsData, 0)
                 expActsDataSq = self.act(expObsDataSq)
@@ -359,21 +365,25 @@ class varGAIL(Module):
             
             opt_d.zero_grad()
             lossAgent = 0
+            meanScoreAgent = []
             for agentScore in agentScores:
                 lossAgent += torch.nn.functional.binary_cross_entropy_with_logits(\
                     agentScore, torch.ones_like(agentScore))
+                meanScoreAgent.append(agentScore.mean().item())
             lossExp = 0
+            meanScoreExp = []
             for expScore in expScores:
                 lossExp += torch.nn.functional.binary_cross_entropy_with_logits(\
                     expScore, torch.zeros_like(expScore))
+                meanScoreExp.append(expScore.mean().item())
             loss = (lossAgent / len(agentScores)) + (lossExp / len(expScores))
             loss.backward()
             opt_d.step()
             
-            print('scores: {0:.2f}, {1:.2f}'.format\
-                  ((lossAgent / len(agentScores)).item(), (lossExp / len(expScores)).item()), end=' ')
-            scoreVHistory[iIter, 0] = (lossAgent / len(agentScores)).item()
-            scoreVHistory[iIter, 1] = (lossExp / len(expScores)).item()
+            print('d_sc: {0:.2f}, {1:.2f}'.format\
+                  ((sum(meanScoreAgent) / len(meanScoreAgent)), (sum(meanScoreExp) / len(meanScoreExp))), end=' ')
+            scoreVHistory[iIter, 0] = (sum(meanScoreAgent) / len(meanScoreAgent))
+            scoreVHistory[iIter, 1] = (sum(meanScoreExp) / len(meanScoreExp))
 
             del expScores, agentScores
 
@@ -407,7 +417,7 @@ class varGAIL(Module):
                 # print('v:', ((-1) * (self.v(obsData).squeeze() - retsData) ** 2).mean())
                 set_params(self.v, new_params)
             
-            print('v: {0:.2f}'.format(sum(vList)/len(vList)), end=' ')
+            print('v: {0:.1f}'.format(sum(vList)/len(vList)), end=' ')
             scoreVHistory[iIter, 2] = sum(vList)/len(vList)
 
             # # print(obs.shape, acts.shape, rets.shape, advs.shape, gms.shape)
@@ -452,14 +462,14 @@ class varGAIL(Module):
 
             print('[ampRatio, Acc.]:', end=' ')
             lineBreakCount = 0
-            ampSaveCriterion = 0.1
+            ampSaveCriteria = [2, 1] # two criteria
             for noiseAmpIndex, noiseAmpRatio in enumerate(noiseAmpRatioList):
                 print('[{0}, {1:.3f}]'.\
                         format(noiseAmpRatio, correct[noiseAmpIndex]/nDataTrAgent), end=' ')
                 accHistory[iIter, noiseAmpIndex] = correct[noiseAmpIndex]/nDataTrAgent
 
                 lineBreakCount += 1
-                if lineBreakCount == 5:
+                if lineBreakCount == 6 and lineBreakCount != len(noiseAmpRatioList):
                     print('')
                     lineBreakCount = 0
 
@@ -468,13 +478,25 @@ class varGAIL(Module):
             with open('./savedModels/varGAIL/logs/' + saveFileName + '_scoreVHistory.npy', 'wb') as f:
                 np.save(f, scoreVHistory)
 
-            compAmpRatio = np.where(np.array(noiseAmpRatioList) == ampSaveCriterion)[0][0]
-            if correct[compAmpRatio]/nDataTrAgent < bestAcc:
-                bestAcc = correct[compAmpRatio]/nDataTrAgent
+            compAmpRatio = np.where(np.array(noiseAmpRatioList) == ampSaveCriteria[0])[0][0]
+            if correct[compAmpRatio]/nDataTrAgent < bestAcc[0]:
+                bestAcc[0] = correct[compAmpRatio]/nDataTrAgent
+                compAmpRatio2nd = np.where(np.array(noiseAmpRatioList) == ampSaveCriteria[1])[0][0]
+                bestAcc[1] = correct[compAmpRatio2nd]/nDataTrAgent
+                
                 torch.save(self.pi.state_dict(), './savedModels/varGAIL/' + saveFileName + '_pi.cpkt')
                 torch.save(self.v.state_dict(), './savedModels/varGAIL/' + saveFileName + '_v.cpkt')
                 torch.save(self.d.state_dict(), './savedModels/varGAIL/' + saveFileName + '_d.cpkt')
                 print('model saved!', end=' ')
+            elif correct[compAmpRatio]/nDataTrAgent == bestAcc[0]:
+                compAmpRatio2nd = np.where(np.array(noiseAmpRatioList) == ampSaveCriteria[1])[0][0]
+                if correct[compAmpRatio2nd]/nDataTrAgent < bestAcc[1]:
+                    bestAcc[1] = correct[compAmpRatio2nd]/nDataTrAgent
+
+                    torch.save(self.pi.state_dict(), './savedModels/varGAIL/' + saveFileName + '_pi.cpkt')
+                    torch.save(self.v.state_dict(), './savedModels/varGAIL/' + saveFileName + '_v.cpkt')
+                    torch.save(self.d.state_dict(), './savedModels/varGAIL/' + saveFileName + '_d.cpkt')
+                    print('model saved!', end=' ')
 
 if __name__ == "__main__":
     main()

@@ -141,7 +141,7 @@ def getPreds(loader, loaderPadLen, model, variableLen=False, noiseAmpRatio = 0.0
         # print(LA.norm(batchInput), LA.norm(noise))
         inputNoiseFlatten = inputFlatten + noise
         batchInput = inputNoiseFlatten.view(batchInput.shape)
-        print(LA.norm(inputFlatten).item(), LA.norm(noise).item())
+        # print(LA.norm(inputFlatten).item(), LA.norm(noise).item())
 
         outputs = model(batchInput)
 

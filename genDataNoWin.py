@@ -16,12 +16,13 @@ def main():
     inputJson = json.load(inputJsonFile)
     dataPathBase = inputJson["dataPathBase"]
     dataType = inputJson["dataType"]
+    dSampFactor = inputJson["dSampFactor"]
     padLen = inputJson["padLen"]
     inputJsonFile.close()
 
     if dataType == 'survey':
         fs = 1000 # 1 kHz
-        dSampFactor = 2
+        # dSampFactor = 4
         nSubC = 30
         nRX = 3
         
@@ -32,7 +33,7 @@ def main():
     dataDict = {activity:[] for activity in activities}
     for activity in activities:
         dataDict[activity] = defaultdict(list)
-    noWindDataPath = dataPath + "noWin_pad_" + str(padLen) + "/"
+    noWindDataPath = dataPath + "noWin_dSamp_" + str(dSampFactor) + "_pad_" + str(padLen) + "/"
 
     for activity in activities:
         if dataType == "survey":
@@ -50,8 +51,9 @@ def main():
             annot = np.array([[str(elm) for elm in v] for v in csv.reader(open(annotFileName, 'r'))])
 
             indActs = np.where(annot[:, 0] == activity)[0]
+            indActsdSamp = indActs[::dSampFactor]
             indPad = np.arange(indActs[0]-padLen*dSampFactor, indActs[0], dSampFactor)
-            indActswithPad = np.concatenate((indPad, indActs))
+            indActswithPad = np.concatenate((indPad, indActsdSamp))
             
             dataActs = data[indActswithPad, 1:1+nSubC*nRX]
             dataList.append(dataActs)
