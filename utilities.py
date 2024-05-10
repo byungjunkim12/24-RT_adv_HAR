@@ -84,12 +84,14 @@ class CSIDataset(Dataset):
         return {'input': data, 'label': label}
 
 
-def getAcc(loader, loaderPadLen, model, variableLen=False, noiseAmpRatio = 0.0, noiseType = 'random'):
+def getAcc(loader, loaderPadLen, modelTarget, modelSurrogate, variableLen=False, noiseAmpRatio = 0.0, noiseType = 'random'):
     '''
     get accuracy from predictions
     '''
     pred_l,label_l = getPreds(loader,loaderPadLen,\
-                            model,variableLen,\
+                            modelTarget,\
+                            modelSurrogate,\
+                            variableLen,\
                             noiseAmpRatio=noiseAmpRatio,\
                             noiseType=noiseType)
     
@@ -102,15 +104,15 @@ def getAcc(loader, loaderPadLen, model, variableLen=False, noiseAmpRatio = 0.0, 
     return correct/len(pred_l)
 
 
-def getPreds(loader, loaderPadLen, model, variableLen=False, noiseAmpRatio = 0.0, noiseType = 'random', print_time = False):
+def getPreds(loader, loaderPadLen, modelTarget, modelSurrogate, variableLen=False, noiseAmpRatio = 0.0, noiseType = 'random', print_time = False):
     # get predictions from network
-    device = model.device
-    model.eval()
+    device = modelTarget.device
+    modelTarget.eval()
     pred_l   = []
     label_l = [] 
     
     if noiseType == 'FGM':
-        model.train()
+        modelSurrogate.train()
 
     start = time.time()
     for batch in loader:
@@ -130,20 +132,20 @@ def getPreds(loader, loaderPadLen, model, variableLen=False, noiseAmpRatio = 0.0
             noise = torch.randn(inputFlatten.shape, device=device)
         elif noiseType == 'FGM':
             batchInput.requires_grad = True
-            model.zero_grad()
+            modelSurrogate.zero_grad()
             loss = nn.CrossEntropyLoss()
-            loss = loss(model(batchInput), batchLabel)
+            loss = loss(modelSurrogate(batchInput), batchLabel)
             loss.backward()
             noise = (batchInput.grad.data).view(batchInput.shape[0], -1)
         noise = torch.mul(torch.div(noise, LA.norm(noise, dim=1).unsqueeze(1)),\
                             noiseAmp.unsqueeze(1))
 
-        # print(LA.norm(batchInput), LA.norm(noise))
+        # print(LA.norm(inputFlatten), LA.norm(noise))
         inputNoiseFlatten = inputFlatten + noise
         batchInput = inputNoiseFlatten.view(batchInput.shape)
         # print(LA.norm(inputFlatten).item(), LA.norm(noise).item())
 
-        outputs = model(batchInput)
+        outputs = modelTarget(batchInput)
 
         pred_l.extend(outputs.detach().max(dim=1).indices.cpu().tolist())
         label_l.extend(batchLabel.cpu().tolist())
@@ -176,7 +178,7 @@ def getPredsGAIL(obs, noises, labels, model, noiseAmpRatio=0.0, padLen=0, print_
 
         obWNoise = obWoPad + noise
         obWNoise = obWoPad.to(device) + noise.to(device)
-        # print(LA.norm(obWoPad).item(), LA.norm(noise).item())
+        # print(LA.norm(obWoPad).item(), LA.norm(noiseFlatten).item(), LA.norm(noise).item())
         outputs = model(obWNoise.unsqueeze(0))
 
         pred_l.extend(outputs.detach().max(dim=1).indices.cpu().tolist())
