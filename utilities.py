@@ -172,8 +172,8 @@ def getPredsGAIL(obs, noises, labels, model, noiseAmpRatio=0.0, padLen=0, print_
         obFlatten = torch.flatten(obWoPad)
         noiseAmp = LA.norm(obFlatten) * noiseAmpRatio
         noiseFlatten = torch.flatten(noise)
-        noiseNormalized = torch.mul(torch.div(noiseFlatten, LA.norm(noiseFlatten)),\
-                noiseAmp)
+        noiseNormalized = torch.mul(torch.div(noiseFlatten,\
+                LA.norm(noiseFlatten)), noiseAmp)
         noise = noiseNormalized.view(obWoPad.shape)
 
         obWNoise = obWoPad + noise

@@ -27,6 +27,7 @@ class PolicyNetwork(Module):
 
         self.state_dim = state_dim
         self.action_dim = action_dim
+        self.discrete = discrete
 
         if not self.discrete:
             self.log_std = Parameter(torch.zeros(action_dim, device=self.device))

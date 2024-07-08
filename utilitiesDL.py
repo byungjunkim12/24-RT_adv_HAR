@@ -5,9 +5,26 @@ import torch.optim as optim
 from torch.nn.utils.rnn import pad_sequence
 
 
-class LSTMNet(nn.Module):
+# class SelfAttention(nn.Module):
+#     def __init__(self, input_size, atten_size, device):
+#         super(SelfAttention, self).__init__()
+#         self.input_size = input_size
+#         self.atten_size = atten_size
+#         self.device = device
+
+#         self.kernel = nn.Tanh(nn.Linear(input_size, atten_size, device=self.device))
+#         self.prob_kernel = nn.Linear
+   
+#     def forward(self, x): # x.shape (batch_size, seq_length, input_dim)
+#         scores = torch.bmm(queries, keys.transpose(1, 2))/(self.input_dim**0.5)
+#         attention = self.softmax(scores)
+#         weighted = torch.bmm(attention, values)
+#         return weighted
+
+
+class LSTMNet_TAR(nn.Module):
     def __init__(self, nClasses, input_size, bidirectional, hidden_size, num_layers, seq_length, device):
-        super(LSTMNet, self).__init__()
+        super(LSTMNet_TAR, self).__init__()
         self.nClasses = nClasses #number of classes
         self.num_layers = num_layers #number of layers
         self.input_size = input_size #input size
@@ -21,9 +38,9 @@ class LSTMNet(nn.Module):
                           bidirectional=bidirectional, device=self.device) #lstm
         # self.fc_1 =  nn.Linear(hidden_size, 128) #fully connected 1
         if bidirectional:
-            self.fc = nn.Linear(2*hidden_size*seq_length, nClasses, device=self.device) #fully connected last layer
+            self.fc = nn.Linear(2*hidden_size*self.seq_length, nClasses, device=self.device) #fully connected last layer
         else:
-            self.fc = nn.Linear(hidden_size*seq_length, nClasses, device=self.device) #fully connected last layer
+            self.fc = nn.Linear(hidden_size*self.seq_length, nClasses, device=self.device) #fully connected last layer
         self.relu = nn.ReLU()
         self.softmax = nn.Softmax(dim=1)
     
@@ -36,25 +53,12 @@ class LSTMNet(nn.Module):
             c_0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(self.device) #internal state
             
         # Propagate input through LSTM
-        # _, (hn, _) = self.lstm(x, (h_0, c_0)) #lstm with input, hidden, and internal state
-        # if self.bidirectional:
-        #     hn = hn.view(-1, 2*self.hidden_size) #reshaping the data for Dense layer next
-        # else:
-        #     hn = hn.view(-1, self.hidden_size) #reshaping the data for Dense layer next
-        # # print(hn.shape)
-        # out = self.relu(hn)
-
-        # Propagate input through LSTM
         hi, (hn, _) = self.lstm(x, (h_0, c_0)) #lstm with input, hidden, and internal state
+        # print(hi.shape, hn.shape)
+        # hn = torch.permute(hn, (1, 0, 2))
         hi = hi.reshape(hi.shape[0], -1) #reshaping the data for Dense layer next
-        out = self.relu(hi)
 
-        # if self.bidirectional:
-        #     hi = hi.reshape(hi.shape[0], -1) #reshaping the data for Dense layer next
-        #     out = self.relu(hi)
-        # else:
-        #     hn = hn.view(-1, self.hidden_size) #reshapinxg the data for Dense layer next
-        #     out = self.relu(hn)
+        out = self.relu(hi)
 
         out = self.fc(out) #Final Output
         out = self.softmax(out)

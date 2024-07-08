@@ -3,6 +3,7 @@ import csv
 import argparse
 import numpy as np
 
+from scipy import signal
 from collections import defaultdict
 from glob import glob
 
@@ -12,7 +13,7 @@ def main():
 
     args = parser.parse_args()
     inputJsonFileName = args.inputJson
-    inputJsonFile = open("./inputJson/" + inputJsonFileName + ".json", "r")
+    inputJsonFile = open("./inputJson/genData/" + inputJsonFileName + ".json", "r")
     inputJson = json.load(inputJsonFile)
     dataPathBase = inputJson["dataPathBase"]
     dataType = inputJson["dataType"]
@@ -20,13 +21,12 @@ def main():
     padLen = inputJson["padLen"]
     inputJsonFile.close()
 
-    if dataType == 'survey':
-        fs = 1000 # 1 kHz
-        # dSampFactor = 4
-        nSubC = 30
-        nRX = 3
-        
-        activities = ['bed', 'fall', 'run', 'sitdown', 'standup', 'walk']
+    fs = 1000 # 1 kHz
+    # dSampFactor = 4
+    nSubC = 30
+    nRX = 3
+    
+    activities = ['bed', 'fall', 'run', 'sitdown', 'standup', 'walk']
 
     if dataType == "survey":
         dataPath = dataPathBase + "HAR_survey/"
@@ -52,6 +52,7 @@ def main():
 
             indActs = np.where(annot[:, 0] == activity)[0]
             indActsdSamp = indActs[::dSampFactor]
+            # indActsdSamp = signal.resample_poly(indActs, 1, dSampFactor)
             indPad = np.arange(indActs[0]-padLen*dSampFactor, indActs[0], dSampFactor)
             indActswithPad = np.concatenate((indPad, indActsdSamp))
             
