@@ -28,16 +28,16 @@ def main():
     
     activities = ['bed', 'fall', 'run', 'sitdown', 'standup', 'walk']
 
-    if dataType == "survey":
-        dataPath = dataPathBase + "HAR_survey/"
+    if dataType == "TAR":
+        dataPath = dataPathBase + "HAR_TAR/"
     dataDict = {activity:[] for activity in activities}
     for activity in activities:
         dataDict[activity] = defaultdict(list)
     noWindDataPath = dataPath + "noWin_dSamp_" + str(dSampFactor) + "_pad_" + str(padLen) + "/"
 
     for activity in activities:
-        if dataType == "survey":
-            fileNameList = glob(dataPath + "/input_" + activity + "*.csv")
+        if dataType == "TAR":
+            fileNameList = glob(dataPath + "input_csv/input_" + activity + "*.csv")
             outputXXFileName = noWindDataPath + "xx_" + activity
 
             print(activity, len(fileNameList))

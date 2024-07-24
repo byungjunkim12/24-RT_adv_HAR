@@ -51,7 +51,7 @@ def main():
     LSTMTargetModelName = inputJson['LSTMTargetModelName']
     LSTMSurroModelName = inputJson['LSTMSurroModelName']
     noiseAmpRatio = inputJson['noiseAmpRatio']
-    tsDataList = inputJson['tsDataList']
+    trDataList = inputJson['trDataList']
     trExpDataRatio = inputJson['trExpDataRatio']
     nHiddenGAIL = inputJson['nHiddenGAIL']
     GAILTrainConfig = inputJson['trainConfig']
@@ -70,7 +70,7 @@ def main():
         device = torch.device("cpu")
 
     dataType = LSTMTargetModelName.split('_')[0]
-    if dataType == 'survey':
+    if dataType == 'TAR':
         fs = 1000 # 1 kHz
         nSubC = 30
         nRX = 3
@@ -78,11 +78,11 @@ def main():
 
     LSTMTargetType = LSTMTargetModelName.split('_')[2]
     bidirTarget = (LSTMTargetType == 'BiLSTM')
-    LSTMSurroType = LSTMSurroModelName.split('_')[2]
+    LSTMSurroType = LSTMSurroModelName.split('_')[1]
     bidirSurro = (LSTMSurroType == 'BiLSTM')
 
     nHiddenTarget = int(LSTMTargetModelName.split('_')[4])
-    nHiddenSurro = int(LSTMSurroModelName.split('_')[4])
+    nHiddenSurro = int(LSTMSurroModelName.split('_')[3])
 
     # Load the LSTM model
     HARTargetNet = VariableLSTMNet(nClasses=len(activities),\
@@ -123,7 +123,7 @@ def main():
                 (actInd) * torch.ones_like(torch.empty(len(dataDict[activity]['obs']),\
                                                     device=device), dtype=int)
             
-            trDataList = list(set(range(len(datasetObs))) - set(tsDataList))
+            tsDataList = list(set(range(len(datasetObs))) - set(trDataList))
             trExpDataList = random.sample(trDataList, int(trExpDataRatio*len(trDataList)))
             trAgentDataList = list(set(trDataList) - set(trExpDataList))
 
@@ -245,13 +245,17 @@ class varGAIL(Module):
         lineBreakCount = 0
         for noiseAmpRatio in noiseAmpRatioList:
             correct = 0.
-            for tsData in tsLoader:
-                tsObswoPad = tsData['obs'][:, self.padLen:, :]
-                pred, label = getPredsGAIL(tsObswoPad, tsData['FGM'], tsData['label'],\
-                                              HARTargetNet, noiseAmpRatio)
-                # for pred, label in zip(pred_l, label_l):
+            for trAgentData in trAgentLoader:
+                trAgentObswoPad = trAgentData['obs'][:, self.padLen:, :]
+                pred, label = getPredsGAIL(trAgentObswoPad, trAgentData['FGM'], trAgentData['label'],\
+                                            HARTargetNet, noiseAmpRatio)
                 correct += (pred == label)
-            print('[{0}, {1:.3f}]'.format(noiseAmpRatio, correct/nDataTs), end=' ')
+            for trExpData in trExpLoader:
+                trExpObswoPad = trExpData['obs'][:, self.padLen:, :]
+                pred, label = getPredsGAIL(trExpObswoPad, trExpData['FGM'], trExpData['label'],\
+                                            HARTargetNet, noiseAmpRatio)
+                correct += (pred == label)
+            print('[{0}, {1:.1f}]'.format(noiseAmpRatio, 100*correct/(nDataTrAgent+nDataTrExp)), end=' ')
             lineBreakCount += 1
             if lineBreakCount == 8 and lineBreakCount != len(noiseAmpRatioList):
                 print('')
@@ -264,14 +268,17 @@ class varGAIL(Module):
         lineBreakCount = 0
         for noiseAmpRatio in noiseAmpRatioList:
             correct = 0.
-            for trAgentData in tsLoader:
-                tsObswoPad = tsData['obs'][:, self.padLen:, :]
-                noiseData = torch.randn(tsObswoPad.shape).to(self.device)
-                pred, label = getPredsGAIL(tsObswoPad, noiseData, tsData['label'],\
-                                              HARTargetNet, noiseAmpRatio)
+            for trAgentData in trAgentLoader:
+                trAgentObswoPad = trAgentData['obs'][:, self.padLen:, :]
+                pred, label = getPredsGAIL(trAgentObswoPad, trAgentData['FGM'], trAgentData['label'],\
+                                            HARTargetNet, noiseAmpRatio)
                 correct += (pred == label)
-                # accuracyList.append(correct/nData)
-            print('[{0}, {1:.3f}]'.format(noiseAmpRatio, correct/nDataTs), end=' ')
+            for trExpData in trExpLoader:
+                trExpObswoPad = trExpData['obs'][:, self.padLen:, :]
+                pred, label = getPredsGAIL(trExpObswoPad, trExpData['FGM'], trExpData['label'],\
+                                            HARTargetNet, noiseAmpRatio)
+                correct += (pred == label)
+            print('[{0}, {1:.1f}]'.format(noiseAmpRatio, 100*correct/(nDataTrAgent+nDataTrExp)), end=' ')
             lineBreakCount += 1
             if lineBreakCount == 8 and lineBreakCount != len(noiseAmpRatioList):
                 print('')
@@ -478,8 +485,8 @@ class varGAIL(Module):
             lineBreakCount = 0
             ampSaveCriteria = [0.5, 1] # two criteria
             for noiseAmpIndex, noiseAmpRatio in enumerate(noiseAmpRatioList):
-                print('[{0}, {1:.3f}]'.\
-                        format(noiseAmpRatio, correct[noiseAmpIndex]/nDataTrAgent), end=' ')
+                print('[{0}, {1:.1f}]'.\
+                        format(noiseAmpRatio, 100*correct[noiseAmpIndex]/nDataTrAgent), end=' ')
                 accHistory[iIter, noiseAmpIndex] = correct[noiseAmpIndex]/nDataTrAgent
 
                 lineBreakCount += 1
