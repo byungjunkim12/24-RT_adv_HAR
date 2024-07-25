@@ -106,7 +106,7 @@ class CSIDataset(Dataset):
 
 
 def getAcc(loader, modelTarget, modelSurro, dSampTarget, dSampSurro,\
-           variableLen=False, noiseAmpRatio = 0.0, noiseType = 'random'):
+           variableLen=False, noiseAmpRatio = 0.0, noiseType = 'random', trLoader=None):
     '''
     get accuracy from predictions
     '''
@@ -117,7 +117,8 @@ def getAcc(loader, modelTarget, modelSurro, dSampTarget, dSampSurro,\
                             dSampSurro,\
                             variableLen,\
                             noiseAmpRatio=noiseAmpRatio,\
-                            noiseType=noiseType)
+                            noiseType=noiseType,\
+                            trLoader=trLoader)
     # print(pred_l)
 
     correct = 0.
@@ -128,7 +129,8 @@ def getAcc(loader, modelTarget, modelSurro, dSampTarget, dSampSurro,\
 
 
 def getPreds(loader, modelTarget, modelSurro, dSampTarget, dSampSurro,\
-             variableLen=False, noiseAmpRatio=0.0, noiseType='random', slideLen=200, seqLen=1000, print_time = False):
+            variableLen=False, noiseAmpRatio=0.0, noiseType='random',\
+            slideLen=200, seqLen=1000, print_time=False, trLoader=None, inputLenTime=5):
     # get predictions from network
     dSampRatio = int(dSampSurro/dSampTarget)
     device = modelTarget.device
@@ -138,11 +140,10 @@ def getPreds(loader, modelTarget, modelSurro, dSampTarget, dSampSurro,\
     
     if noiseType == 'FGM':
         modelSurro.train()
-
-    if noiseType == 'Univ':
+    elif noiseType == 'Univ':
         modelSurro.train()
         nClass = 0
-        for batch in loader:
+        for batch in trLoader:
             batchInput, batchLabel = batch
             if batchLabel.item() > nClass:
                 nClass = batchLabel.item()
@@ -150,23 +151,29 @@ def getPreds(loader, modelTarget, modelSurro, dSampTarget, dSampSurro,\
 
         avgNoiseList = [None] * nClass
         longestLenList = [0] * nClass
-        for batch in loader:
+        for batch in trLoader:
             batchInput, batchLabel = batch
             if longestLenList[batchLabel.item()] < batchInput.size(1):
                 longestLenList[batchLabel.item()] = batchInput.size(1)
         
         for i in range(nClass):
             avgNoiseList[i] = torch.zeros(1, longestLenList[i], batchInput.shape[-1], device=device)
+    elif noiseType == 'BC':
+        modelSurro.eval()
+        # inputTimeLen = slideLen
 
     start = time.time()
-    for batch in loader:
+    if noiseType == 'Univ':
+        tsLoader = trLoader
+    else:
+        tsLoader = loader
+    for batch in tsLoader:
         batchInput, batchLabel = batch
+        # print(batchInput.shape)
         batchLabel = batchLabel.to(device)
-        print(batchInput.shape)
         if dSampRatio != 1:
             batchInput = torch.from_numpy(signal.resample_poly(batchInput.cpu(), 1, dSampRatio, axis=1)).to(device)
-        print(batchInput.shape)
-    
+
         inputFlatten = batchInput.view(batchInput.shape[0], -1)
         noiseAmp = LA.norm(inputFlatten, dim=1) * noiseAmpRatio
         if noiseType == 'random':
@@ -178,6 +185,20 @@ def getPreds(loader, modelTarget, modelSurro, dSampTarget, dSampSurro,\
             loss = loss(modelSurro(batchInput), batchLabel)
             loss.backward()
             noise = (batchInput.grad.data).view(batchInput.shape[0], -1)
+        elif noiseType == 'BC':
+            batchTargetInput = torch.Tensor().to(device)
+            for i in range(0, batchInput.shape[1]):
+                if i+inputLenTime > batchInput.shape[1]-1:
+                    break
+                targetInput = batchInput[:, i:i+inputLenTime, :]
+                targetInput = targetInput * torch.numel(targetInput) /\
+                    (LA.norm(targetInput) * targetInput.shape[-1])
+                batchTargetInput = torch.cat((batchTargetInput, targetInput), dim=0)
+            noise = modelSurro(batchTargetInput)
+            batchInput = batchInput[:, inputLenTime:, :]
+            # [inputTimeLen:, :, :]
+
+            # print(batchInput.shape, batchTargetInput.shape, noise.shape)
         
         if noiseType == 'Univ':
             noise = torch.mul(torch.div(noise, LA.norm(noise, dim=1).unsqueeze(1)),\
@@ -203,7 +224,8 @@ def getPreds(loader, modelTarget, modelSurro, dSampTarget, dSampSurro,\
 
                 batchTargetInput = torch.Tensor().to(device)
                 noise = noise.view(batchInput.shape)
-                noiseUpSamp = torch.from_numpy(signal.resample_poly(noise.cpu(), dSampRatio, 1, axis=1)).to(device)
+                noiseUpSamp = torch.from_numpy(signal.resample_poly(noise.detach().cpu(), dSampRatio, 1, axis=1)).to(device)
+                # print(batchInputUpSamp.shape, noiseUpSamp.shape)
                 noiseTargetInput = torch.Tensor().to(device)
                 for i in range(0, batchInputUpSamp.shape[1], slideLen):
                     if i+seqLen > batchInputUpSamp.shape[1]:
@@ -230,8 +252,11 @@ def getPreds(loader, modelTarget, modelSurro, dSampTarget, dSampSurro,\
     if noiseType == 'Univ':
         for batch in loader:
             batchInput, batchLabel = batch
+            batchLabel = batchLabel.to(device)
+            # if dSampRatio != 1:
+            #     batchInput = torch.from_numpy(signal.resample_poly(batchInput.cpu(), 1, dSampRatio, axis=1)).to(device)
+
             if variableLen:
-                batchLabel = batchLabel.to(device)
                 inputFlatten = batchInput.view(batchInput.shape[0], -1)
                 noiseAmp = LA.norm(inputFlatten, dim=1) * noiseAmpRatio
                 noise = torch.from_numpy(signal.resample_poly(\
@@ -241,29 +266,39 @@ def getPreds(loader, modelTarget, modelSurro, dSampTarget, dSampSurro,\
                             noiseAmp.unsqueeze(1))
                 inputNoiseFlatten = inputFlatten + noise
                 batchInput = inputNoiseFlatten.view(batchInput.shape)
+                batchTargetLabel = batchLabel
 
             else:
-                batchInputUpSamp = torch.from_numpy(signal.resample_poly(batchInput.detach().cpu(), dSampRatio, 1, axis=1)).to(device)
-                if batchInputUpSamp.shape[1] < seqLen:
-                    continue    
+                if batchInput.shape[1] < seqLen:
+                    continue
                 
                 batchTargetInput = torch.Tensor().to(device)
-                inputFlatten = LA.norm(batchInputUpSamp.view(batchInputUpSamp.shape[0], -1), dim=1) * noiseAmpRatio
+                # noiseAmp = LA.norm(batchInput.view(batchInput.shape[0], -1), dim=1) * noiseAmpRatio
+                # print(batchInput.shape, longestLenList[batchLabel.item()])
                 noise = torch.from_numpy(signal.resample_poly(\
-                    avgNoiseList[batchLabel.item()].cpu(), batchInputUpSamp.shape[1], longestLenList[batchLabel.item()], axis=1)).to(device)
-                for i in range(0, batchInputUpSamp.shape[1], slideLen):
-                    if i+seqLen > batchInputUpSamp.shape[1]:
+                    avgNoiseList[batchLabel.item()].cpu(), batchInput.shape[1], longestLenList[batchLabel.item()], axis=1)).to(device)
+                noiseTargetInput = torch.Tensor().to(device)
+                for i in range(0, batchInput.shape[1], slideLen):
+                    if i+seqLen > batchInput.shape[1]:
                         break
-                    targetInput = batchInputUpSamp[:, i:i+seqLen, :]
+                    targetInput = batchInput[:, i:i+seqLen, :]
                     targetInput = targetInput * torch.numel(targetInput) /\
                         (LA.norm(targetInput) * targetInput.shape[-1])
                     batchTargetInput = torch.cat((batchTargetInput, targetInput), dim=0)
-                print(batchInput.shape, batchInputUpSamp.shape, batchTargetInput.shape, noise.shape)
+
+                    targetNoise = noise[:, i:i+seqLen, :]
+                    targetNoise = targetNoise * torch.numel(targetNoise) /\
+                        (LA.norm(targetNoise) * targetNoise.shape[-1]) * noiseAmpRatio
+                    noiseTargetInput = torch.cat((noiseTargetInput, targetNoise), dim=0)
+
+                batchTargetLabel = batchLabel * torch.ones(batchTargetInput.shape[0]).to(device)
+                batchInput = batchTargetInput + noiseTargetInput
+                # print(batchInput.shape, LA.norm(batchTargetInput).item(), LA.norm(noiseTargetInput).item())
     
-            outputs = modelTarget(batchTargetInput)
+            outputs = modelTarget(batchInput)
 
             pred_l.extend(outputs.detach().max(dim=1).indices.cpu().tolist())
-            label_l.extend(batchLabel.cpu().tolist())
+            label_l.extend(batchTargetLabel.cpu().tolist())
         
     if print_time:
         end = time.time()
@@ -283,8 +318,7 @@ def getPredsWin(loader, modelTarget, modelSurro, dSampTarget, dSampSurro,\
     
     if noiseType == 'FGM':
         modelSurro.train()
-
-    if noiseType == 'Univ':
+    elif noiseType == 'Univ':
         modelSurro.train()
         nClass = 0
         for batch in loader:
