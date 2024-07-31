@@ -1,1 +1,1 @@
-for filename in *.npy; do mv "${filename}" "${filename#xx_xx__}"; done;
+for filename in TAR_BiLSTM_*; do mv "${filename}" "${filename/TAR_BiLSTM/TAR_surro_BiLSTM}"; done;

@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 import torch.nn as nn
 from torch import linalg as LA
-
+from torch.cuda import FloatTensor
 
 def collate_fn(batch):
     inputs = []
@@ -155,12 +155,11 @@ def getPreds(loader, modelTarget, modelSurro, dSampTarget, dSampSurro,\
             batchInput, batchLabel = batch
             if longestLenList[batchLabel.item()] < batchInput.size(1):
                 longestLenList[batchLabel.item()] = batchInput.size(1)
-        
+                
         for i in range(nClass):
             avgNoiseList[i] = torch.zeros(1, longestLenList[i], batchInput.shape[-1], device=device)
-    elif noiseType == 'BC':
+    elif noiseType == 'BC' or noiseType == 'GAIL':
         modelSurro.eval()
-        # inputTimeLen = slideLen
 
     start = time.time()
     if noiseType == 'Univ':
@@ -169,7 +168,7 @@ def getPreds(loader, modelTarget, modelSurro, dSampTarget, dSampSurro,\
         tsLoader = loader
     for batch in tsLoader:
         batchInput, batchLabel = batch
-        # print(batchInput.shape)
+        # print('batchbatch', batchInput.shape, batchLabel.shape)
         batchLabel = batchLabel.to(device)
         if dSampRatio != 1:
             batchInput = torch.from_numpy(signal.resample_poly(batchInput.cpu(), 1, dSampRatio, axis=1)).to(device)
@@ -186,19 +185,31 @@ def getPreds(loader, modelTarget, modelSurro, dSampTarget, dSampSurro,\
             loss.backward()
             noise = (batchInput.grad.data).view(batchInput.shape[0], -1)
         elif noiseType == 'BC':
-            batchTargetInput = torch.Tensor().to(device)
+            batchSurroInput = torch.Tensor().to(device)
             for i in range(0, batchInput.shape[1]):
                 if i+inputLenTime > batchInput.shape[1]-1:
                     break
                 targetInput = batchInput[:, i:i+inputLenTime, :]
                 targetInput = targetInput * torch.numel(targetInput) /\
                     (LA.norm(targetInput) * targetInput.shape[-1])
-                batchTargetInput = torch.cat((batchTargetInput, targetInput), dim=0)
-            noise = modelSurro(batchTargetInput)
+                batchSurroInput = torch.cat((batchSurroInput, targetInput), dim=0)
+            noise = modelSurro(batchSurroInput).view(batchInput.shape[0], -1)
             batchInput = batchInput[:, inputLenTime:, :]
-            # [inputTimeLen:, :, :]
-
-            # print(batchInput.shape, batchTargetInput.shape, noise.shape)
+            inputFlatten = batchInput.view(batchInput.shape[0], -1)
+        elif noiseType == 'GAIL':
+            batchSurroInput = torch.Tensor().to(device)
+            for i in range(0, inputLenTime):
+                targetInput = batchInput[:, i:i+(batchInput.shape[1]-inputLenTime), :]
+                # targetInput = targetInput * torch.numel(targetInput) /\
+                #     (LA.norm(targetInput) * targetInput.shape[-1])
+                batchSurroInput = torch.cat((batchSurroInput, targetInput), dim=2)
+            
+            distb = modelSurro(FloatTensor(batchSurroInput))
+            noise = distb.sample()
+            batchInput = batchInput[:, inputLenTime:, :]
+            
+            inputFlatten = batchInput.view(batchInput.shape[0], -1)
+            # print(batchInput.shape, batchSurroInput.shape, noise.shape)
         
         if noiseType == 'Univ':
             noise = torch.mul(torch.div(noise, LA.norm(noise, dim=1).unsqueeze(1)),\
@@ -433,6 +444,7 @@ def getPredsGAIL(obs, noises, labels, model, noiseAmpRatio=0.0, padLen=0, print_
     
     # start = time.time()
     for ob, noise, label in zip(obs, noises, labels):
+        # print("ob", ob.shape, "noise", noise.shape)
         obWoPad = ob[padLen:, :]
         # print('obWoPad:', obWoPad.shape, 'noise:', noise.shape, noiseAmpRatio)
         obFlatten = torch.flatten(obWoPad)

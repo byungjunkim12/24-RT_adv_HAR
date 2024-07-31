@@ -147,19 +147,6 @@ class VariableLSTMNet(nn.Module):
             hn = hn.view(-1, self.hidden_size) #reshaping the data for Dense layer next
         # print(hn.shape)
         out = self.relu(hn)
-
-        # Propagate input through LSTM
-        # hi, (hn, _) = self.lstm(x, (h_0, c_0)) #lstm with input, hidden, and internal state
-        # hi = hi.reshape(hi.shape[0], -1) #reshaping the data for Dense layer next
-        # out = self.relu(hi)
-
-        # if self.bidirectional:
-        #     hn = hn.reshape(-1, self.hidden_size*2) #reshaping the data for Dense layer next
-        #     out = self.relu(hn)
-        # else:
-        #     hn = hn.view(-1, self.hidden_size) #reshapinxg the data for Dense layer next
-        #     out = self.relu(hn)
-
         out = self.fc(out) #Final Output
         out = self.softmax(out)
 
